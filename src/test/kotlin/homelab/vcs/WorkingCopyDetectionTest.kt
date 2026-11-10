@@ -6,6 +6,9 @@ import com.intellij.openapi.vcs.VcsRootError
 import com.intellij.openapi.vcs.roots.VcsRootDetector
 import com.intellij.openapi.vcs.roots.VcsRootErrorsFinder
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.openapi.vfs.VirtualFileVisitor
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.moduleFixture
@@ -25,8 +28,8 @@ import kotlin.io.path.createDirectories
  * Capability working-copy-detection, through the IDE's own root detection and root-problem finder.
  *
  * Layout: `<outer>/project` is the project directory and the content root of its only module. `<outer>` lies
- * above the project and is a working copy only in "Project directory inside a working copy". Only the content
- * root is refreshed in the VFS, so the scanner meets directories that the VFS has not loaded yet.
+ * above the project and is a working copy only in "Project directory inside a working copy". Only the children
+ * of the content root are reloaded in the VFS, so the scanner meets directories that the VFS has not loaded yet.
  */
 @TestApplication
 class WorkingCopyDetectionTest {
@@ -159,9 +162,20 @@ class WorkingCopyDetectionTest {
         return projectPath.get()
     }
 
-    /** Refreshes only the content root, then runs the IDE's root detection; returns the CVS roots' real paths. */
+    /**
+     * Loads the content tree into the VFS, as indexing does for an open project. The platform's scanner skips
+     * the children of directories that the VFS has not loaded: it sees them as transient files that are not in
+     * the project content. The CVS admin files themselves are still read only by java.nio.
+     */
+    private fun refreshContentRoot() {
+        val outer = refreshed(outerPath.get())
+        VfsUtil.markDirtyAndRefresh(false, true, true, outer)
+        VfsUtilCore.visitChildrenRecursively(outer, object : VirtualFileVisitor<Unit>() {})
+    }
+
+    /** Runs the IDE's root detection; returns the CVS roots' real paths. */
     private fun detectedCvsRoots(): Set<Path> {
-        refreshed(projectDir())
+        refreshContentRoot()
         return VcsRootDetector.getInstance(project.get()).detect()
             .filter { it.vcs?.name == "CVS" }
             .map { it.path.toNioPath().toRealPath() }
@@ -169,7 +183,7 @@ class WorkingCopyDetectionTest {
     }
 
     private fun cvsRootErrors(): List<VcsRootError> {
-        refreshed(projectDir())
+        refreshContentRoot()
         return VcsRootErrorsFinder.getInstance(project.get()).find().filter { it.mapping.vcs == "CVS" }
     }
 

@@ -14,5 +14,6 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <vcs name="CVS" vcsClass="homelab.vcs.CvsVcs" displayName="CVS" administrativeAreaName="CVS"/>
+        <vcsRootChecker implementation="homelab.vcs.CvsRootChecker"/>
     </extensions>
 </idea-plugin>
