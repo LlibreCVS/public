@@ -1,0 +1,5 @@
+# Gradle and IntelliJ Platform build output
+.gradle/
+build/
+.intellijPlatform/
+.kotlin/
