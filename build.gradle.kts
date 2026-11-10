@@ -22,6 +22,9 @@ dependencies {
         // Where AppLocker blocks executables under ~/.gradle, the IDE-running tasks (test, runIde, verifyPlugin)
         // use a JetBrains Runtime from an allowed folder instead of the one bundled with the downloaded IDE.
         providers.gradleProperty("intellijcvs.jbr").orNull?.let { jetbrainsRuntimeLocal(it) }
+        // The JUnit 5 framework needs the platform test framework too: the test application loads its
+        // TestProjectManager, which test-framework-junit5 does not bring.
+        testFramework(TestFrameworkType.Platform)
         testFramework(TestFrameworkType.JUnit5)
         // VcsRootErrorsFinder lives in this product module, which is not on the test compile classpath by itself.
         testBundledModule("intellij.platform.vcs.impl")
