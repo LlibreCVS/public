@@ -1,6 +1,13 @@
 <idea-plugin>
     <id>intellijcvs</id>
     <name>IntelliJCVS</name>
+    <vendor>Home Laboratory</vendor>
+
+    <description><![CDATA[
+    CVS support for IntelliJ IDEA. This version registers CVS as a version control system that project
+    directories can be mapped to, and finds the CVS working copies of a project, so that the IDE registers
+    them as CVS roots. CVS operations come in later versions.
+    ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
 </idea-plugin>

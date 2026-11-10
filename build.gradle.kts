@@ -39,7 +39,16 @@ dependencies {
 }
 
 intellijPlatform {
+    pluginConfiguration {
+        // Explicit, so that a change of the plugin's defaults cannot add an upper bound.
+        ideaVersion {
+            sinceBuild = "262"
+            untilBuild = provider { null }
+        }
+    }
     pluginVerification {
+        // "IntelliJCVS" contains the restricted word "IntelliJ"; only this rule is muted.
+        freeArgs = listOf("-mute", "TemplateWordInPluginName")
         ides {
             current()
         }
