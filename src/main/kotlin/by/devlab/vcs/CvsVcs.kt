@@ -1,4 +1,4 @@
-package homelab.vcs
+package by.devlab.vcs
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.AbstractVcs

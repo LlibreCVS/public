@@ -13,7 +13,7 @@
     <depends>com.intellij.modules.vcs</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <vcs name="CVS" vcsClass="homelab.vcs.CvsVcs" displayName="CVS" administrativeAreaName="CVS"/>
-        <vcsRootChecker implementation="homelab.vcs.CvsRootChecker"/>
+        <vcs name="CVS" vcsClass="by.devlab.vcs.CvsVcs" displayName="CVS" administrativeAreaName="CVS"/>
+        <vcsRootChecker implementation="by.devlab.vcs.CvsRootChecker"/>
     </extensions>
 </idea-plugin>

@@ -1,4 +1,4 @@
-package homelab.vcs
+package by.devlab.vcs
 
 import java.nio.file.Files
 import java.nio.file.Path

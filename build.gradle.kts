@@ -5,7 +5,7 @@ plugins {
     id("org.jetbrains.intellij.platform") version "2.20.1"
 }
 
-group = "homelab"
+group = "by.devlab"
 version = "0.1.0"
 
 repositories {

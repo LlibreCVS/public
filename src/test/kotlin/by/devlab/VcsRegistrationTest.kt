@@ -1,4 +1,4 @@
-package homelab
+package by.devlab
 
 import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.extensions.PluginDescriptor
