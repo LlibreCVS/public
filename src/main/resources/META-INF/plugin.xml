@@ -10,4 +10,9 @@
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.vcs</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <vcs name="CVS" vcsClass="homelab.vcs.CvsVcs" displayName="CVS" administrativeAreaName="CVS"/>
+    </extensions>
 </idea-plugin>
