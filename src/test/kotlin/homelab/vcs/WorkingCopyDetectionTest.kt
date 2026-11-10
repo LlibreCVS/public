@@ -113,6 +113,29 @@ class WorkingCopyDetectionTest {
     }
 
     @Test
+    @DisplayName("Mapping of a working-copy subdirectory is valid")
+    fun mappingOfAWorkingCopySubdirectoryIsValid() {
+        val top = FakeWorkingCopy.write(projectDir().resolve("wc").createDirectories(), repository)
+        val sub = FakeWorkingCopy.write(top.resolve("src").createDirectories(), repository)
+        mapToCvs(sub)
+
+        val problems = cvsRootErrors().filter { Path.of(it.mapping.directory).toRealPath() == sub.toRealPath() }
+
+        assertEquals(emptyList<VcsRootError>(), problems)
+    }
+
+    @Test
+    @DisplayName("Mapping of a directory without CVS/Root is invalid")
+    fun mappingOfADirectoryWithoutCvsRootIsInvalid() {
+        val plain = projectDir().resolve("plain").createDirectories()
+        mapToCvs(plain)
+
+        val extra = cvsRootErrors().filter { it.type == VcsRootError.Type.EXTRA_MAPPING }
+
+        assertEquals(listOf(plain.toRealPath()), extra.map { Path.of(it.mapping.directory).toRealPath() })
+    }
+
+    @Test
     @DisplayName("Detection leaves the working copy unchanged")
     fun detectionLeavesTheWorkingCopyUnchanged() {
         val top = FakeWorkingCopy.write(projectDir().resolve("wc").createDirectories(), repository)
