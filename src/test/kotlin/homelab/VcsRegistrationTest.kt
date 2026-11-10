@@ -34,8 +34,10 @@ class VcsRegistrationTest {
         assertNull(plugin.untilBuild)
     }
 
-    private fun loadedPlugin(): PluginDescriptor =
-        checkNotNull(PluginManagerCore.getPlugin(PluginId.getId("intellijcvs"))) {
-            "the IDE did not load plugin intellijcvs"
-        }
+    private fun loadedPlugin(): PluginDescriptor {
+        val id = PluginId.getId("intellijcvs")
+        // getPlugin also returns installed plugins that are disabled; isLoaded proves the IDE loaded it.
+        check(PluginManagerCore.isLoaded(id)) { "the IDE did not load plugin intellijcvs" }
+        return checkNotNull(PluginManagerCore.getPlugin(id))
+    }
 }
