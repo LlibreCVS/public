@@ -46,8 +46,8 @@ class WorkingCopyDetectionTest {
     @Test
     @DisplayName("Project directory at the top of a working copy")
     fun projectDirectoryAtTheTopOfAWorkingCopy() {
-        val top = FakeWorkingCopy.write(projectDir(), repository)
-        FakeWorkingCopy.write(top.resolve("src").createDirectories(), repository)
+        val top = FakeWorkingCopy.write(projectDir(), repository, "module")
+        trackedSubdirectory(top, "src", repository)
 
         assertEquals(setOf(top.toRealPath()), detectedCvsRoots())
     }
@@ -55,11 +55,13 @@ class WorkingCopyDetectionTest {
     @Test
     @DisplayName("Several working copies in a project")
     fun severalWorkingCopiesInAProject() {
-        val first = FakeWorkingCopy.write(projectDir().resolve("first").createDirectories(), repository)
-        FakeWorkingCopy.write(first.resolve("src").createDirectories(), repository)
-        val nested = FakeWorkingCopy.write(first.resolve("lib").createDirectories(), otherRepository)
-        FakeWorkingCopy.write(nested.resolve("core").createDirectories(), otherRepository)
-        val second = FakeWorkingCopy.write(projectDir().resolve("second").createDirectories(), repository)
+        val first = FakeWorkingCopy.write(projectDir().resolve("first").createDirectories(), repository, "first")
+        trackedSubdirectory(first, "src", repository)
+        // Listed in first's entries, but checked out from another repository: a root of its own.
+        val nested = FakeWorkingCopy.write(first.resolve("lib").createDirectories(), otherRepository, "lib")
+        FakeWorkingCopy.track(first, nested)
+        trackedSubdirectory(nested, "core", otherRepository)
+        val second = FakeWorkingCopy.write(projectDir().resolve("second").createDirectories(), repository, "second")
 
         assertEquals(setOf(first.toRealPath(), nested.toRealPath(), second.toRealPath()), detectedCvsRoots())
     }
@@ -68,7 +70,7 @@ class WorkingCopyDetectionTest {
     @DisplayName("Project directory inside a working copy")
     fun projectDirectoryInsideAWorkingCopy() {
         val top = FakeWorkingCopy.write(outerPath.get(), repository)
-        FakeWorkingCopy.write(projectDir(), repository)
+        trackedSubdirectory(top, projectDir().fileName.toString(), repository)
 
         assertEquals(setOf(top.toRealPath()), detectedCvsRoots())
     }
@@ -104,7 +106,7 @@ class WorkingCopyDetectionTest {
     @DisplayName("Top directory is versioned by CVS")
     fun topDirectoryIsVersionedByCvs() {
         val top = FakeWorkingCopy.write(projectDir().resolve("wc").createDirectories(), repository)
-        val sub = FakeWorkingCopy.write(top.resolve("src").createDirectories(), repository)
+        val sub = trackedSubdirectory(top, "src", repository)
         val vcsManager = ProjectLevelVcsManager.getInstance(project.get())
 
         assertEquals("CVS", vcsManager.findVersioningVcs(refreshed(top))?.name)
@@ -115,7 +117,7 @@ class WorkingCopyDetectionTest {
     @DisplayName("Mapping of a working-copy subdirectory is valid")
     fun mappingOfAWorkingCopySubdirectoryIsValid() {
         val top = FakeWorkingCopy.write(projectDir().resolve("wc").createDirectories(), repository)
-        val sub = FakeWorkingCopy.write(top.resolve("src").createDirectories(), repository)
+        val sub = trackedSubdirectory(top, "src", repository)
         mapToCvs(sub)
 
         val problems = cvsRootErrors().filter { Path.of(it.mapping.directory).toRealPath() == sub.toRealPath() }
@@ -138,7 +140,7 @@ class WorkingCopyDetectionTest {
     @DisplayName("Detection leaves the working copy unchanged")
     fun detectionLeavesTheWorkingCopyUnchanged() {
         val top = FakeWorkingCopy.write(projectDir().resolve("wc").createDirectories(), repository)
-        FakeWorkingCopy.write(top.resolve("src").createDirectories(), repository)
+        trackedSubdirectory(top, "src", repository)
         Files.writeString(top.resolve("src/Main.java"), "class Main {}\n")
         val before = FakeWorkingCopy.snapshot(top)
 
@@ -165,9 +167,9 @@ class WorkingCopyDetectionTest {
     fun largeWorkingCopyIsOneRoot() {
         val top = FakeWorkingCopy.write(projectDir().resolve("big").createDirectories(), repository)
         for (i in 0 until 40) {
-            val group = FakeWorkingCopy.write(top.resolve("group$i").createDirectories(), repository)
+            val group = trackedSubdirectory(top, "group$i", repository)
             for (j in 0 until 49) {
-                FakeWorkingCopy.write(group.resolve("dir$j").createDirectories(), repository)
+                trackedSubdirectory(group, "dir$j", repository)
             }
         }
 
@@ -182,6 +184,16 @@ class WorkingCopyDetectionTest {
     private fun projectDir(): Path {
         module.get()
         return projectPath.get()
+    }
+
+    /**
+     * Makes `<parent>/<name>` a working-copy directory of [root] that belongs to [parent]: listed in its entries,
+     * with a CVS/Repository that continues the parent's.
+     */
+    private fun trackedSubdirectory(parent: Path, name: String, root: String): Path {
+        val parentRepository = Files.readString(parent.resolve("CVS/Repository")).trim().trimEnd('/')
+        val child = FakeWorkingCopy.write(parent.resolve(name).createDirectories(), root, "$parentRepository/$name")
+        return FakeWorkingCopy.track(parent, child)
     }
 
     /**
