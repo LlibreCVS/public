@@ -2,6 +2,9 @@ package by.devlab.cvs
 
 import com.intellij.cvsSupport2.CvsUpdateEnvironment
 import com.intellij.cvsSupport2.CvsVcs2
+import com.intellij.cvsSupport2.changeBrowser.CvsChangeList
+import com.intellij.cvsSupport2.changeBrowser.CvsCommittedChangesProvider
+import com.intellij.cvsSupport2.changeBrowser.CvsRepositoryLocation
 import com.intellij.cvsSupport2.checkinProject.CvsCheckinEnvironment
 import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration
 import com.intellij.cvsSupport2.config.CvsConfiguration
@@ -215,6 +218,21 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
             .sortedByDescending { it.revisionNumber }
             .map { Revision(it.revisionNumber.asString(), it.author.orEmpty(), it.commitMessage.orEmpty().trimEnd()) }
     }
+
+    /** The repository location of the working copy [root] as the Repository view gets it from the provider. */
+    fun repositoryLocation(project: Project, root: Path): CvsRepositoryLocation =
+        checkNotNull(committedChangesProvider(project).getLocationFor(VcsUtil.getFilePath(virtualFile(root)))) {
+            "no repository location for $root"
+        }
+
+    /** The committed changesets of the working copy [root], loaded the way the Repository view loads them. */
+    fun changesets(project: Project, root: Path): List<CvsChangeList> {
+        val provider = committedChangesProvider(project)
+        return provider.getCommittedChanges(provider.createDefaultSettings(), repositoryLocation(project, root), 0)
+    }
+
+    private fun committedChangesProvider(project: Project): CvsCommittedChangesProvider =
+        CvsVcs2.getInstance(project).committedChangesProvider as CvsCommittedChangesProvider
 
     /** One line as annotate shows it. */
     data class AnnotatedLine(val revision: String, val author: String, val text: String)
