@@ -3,6 +3,8 @@ package by.devlab.cvs
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.time.Instant
 import kotlin.io.path.readBytes
 
 /** Seed content that looks like the team's repositories (design decision 5 and the review focus of tasks.md). */
@@ -36,5 +38,15 @@ object TestData {
     fun write(file: Path, bytes: ByteArray) {
         Files.createDirectories(file.parent)
         Files.write(file, bytes)
+    }
+
+    /**
+     * Edits a checked-out file. CVS tells an edit by a modification time that differs from the one in CVS/Entries,
+     * to the second; a test edits within the second of its checkout, so the time is moved past it, as it would be
+     * for a person editing the file later.
+     */
+    fun edit(file: Path, bytes: ByteArray) {
+        write(file, bytes)
+        Files.setLastModifiedTime(file, FileTime.from(Instant.now().plusSeconds(5)))
     }
 }

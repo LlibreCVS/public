@@ -31,7 +31,7 @@ class UpdateTest {
     @DisplayName("Update brings another user's change")
     fun updateBringsAnotherUsersChange() {
         val (a, b) = twoWorkingCopies("update-change", Charsets.UTF_8)
-        TestData.write(b.resolve("заметки.txt"), "первая строка\nстрока от bob\n".toByteArray())
+        TestData.edit(b.resolve("заметки.txt"), "первая строка\nстрока от bob\n".toByteArray())
         session.commit(project.get(), listOf(b.resolve("заметки.txt")), "bob меняет заметки")
 
         session.update(project.get(), a)
@@ -74,8 +74,8 @@ class UpdateTest {
     @DisplayName("Update keeps local edits")
     fun updateKeepsLocalEdits() {
         val (a, b) = twoWorkingCopies("update-local", Charsets.UTF_8)
-        TestData.write(a.resolve("заметки.txt"), "первая строка\nправка alice, не закоммичена\n".toByteArray())
-        TestData.write(b.resolve("план.txt"), "план от bob\n".toByteArray())
+        TestData.edit(a.resolve("заметки.txt"), "первая строка\nправка alice, не закоммичена\n".toByteArray())
+        TestData.edit(b.resolve("план.txt"), "план от bob\n".toByteArray())
         session.commit(project.get(), listOf(b.resolve("план.txt")), "bob меняет план")
 
         session.update(project.get(), a)
@@ -90,7 +90,7 @@ class UpdateTest {
         val seed = session.newDirectory("$module-seed")
         TestData.write(seed.resolve("заметки.txt"), "первая строка\n".toByteArray(charset))
         TestData.write(seed.resolve("план.txt"), "план\n".toByteArray(charset))
-        session.importModule("alice", seed, module)
+        session.importModule("alice", seed, module, binaryExtensions = listOf("bin"))
         val a = session.checkout("alice", module, session.newDirectory("$module-a"))
         val b = session.checkout("bob", module, session.newDirectory("$module-b"))
         session.mapToCvs(project.get(), a, b)

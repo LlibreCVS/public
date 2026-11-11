@@ -1,6 +1,22 @@
 package by.devlab.cvs
 
+import com.intellij.cvsSupport2.CvsUpdateEnvironment
+import com.intellij.cvsSupport2.CvsVcs2
+import com.intellij.cvsSupport2.checkinProject.CvsCheckinEnvironment
 import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration
+import com.intellij.cvsSupport2.config.CvsConfiguration
+import com.intellij.cvsSupport2.cvsoperations.cvsAdd.AddedFileInfo
+import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.openapi.util.Ref
+import com.intellij.openapi.vcs.ProjectLevelVcsManager
+import com.intellij.openapi.vcs.VcsDirectoryMapping
+import com.intellij.openapi.vcs.changes.Change
+import com.intellij.openapi.vcs.changes.CommitContext
+import com.intellij.openapi.vcs.changes.CurrentContentRevision
+import com.intellij.openapi.vcs.update.UpdatedFiles
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.vcsUtil.VcsUtil
 import com.intellij.cvsSupport2.config.CvsRootConfiguration
 import com.intellij.cvsSupport2.cvsExecution.CvsOperationExecutor
 import com.intellij.cvsSupport2.cvsExecution.CvsOperationExecutorCallback
@@ -123,20 +139,53 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         if (!executor.hasNoErrors()) throw executor.firstError
     }
 
-    /** Maps [roots] (working copies) to CVS in [project]. */
-    fun mapToCvs(project: Project, vararg roots: Path): Unit = throw NotImplementedError()
+    /** Maps [roots] (working copies) to CVS in [project], next to the mappings it already has. */
+    fun mapToCvs(project: Project, vararg roots: Path) {
+        val manager = ProjectLevelVcsManager.getInstance(project)
+        val added = roots.map { VcsDirectoryMapping(virtualFile(it).path, CvsVcs2.getKey().name) }
+        manager.directoryMappings = manager.directoryMappings.filter { it.directory.isNotEmpty() } + added
+    }
 
-    /** Schedules [paths] (directories before the files in them) for addition, as the add dialog does on OK. */
-    fun add(project: Project, vararg paths: Path): Unit = throw NotImplementedError()
+    /**
+     * Schedules [paths] for addition the way the add dialog does on OK: one [AddedFileInfo] per path, nested
+     * under its parent's when that is added too, handed to the plugin's add handler. Directories come first.
+     */
+    fun add(project: Project, vararg paths: Path) {
+        val configuration = CvsConfiguration.getInstance(project)
+        val infos = paths.associateWith { AddedFileInfo(virtualFile(it), project, configuration) }
+        infos.forEach { (path, info) -> infos[path.parent]?.let { info.setParent(it) } }
+        val roots = infos.filterKeys { it.parent !in infos }.values
+        run(CommandCvsHandler.createAddFilesHandler(project, roots), project)
+    }
 
     /** Commits [files] through the plugin's checkin environment and fails on any CVS error. */
-    fun commit(project: Project, files: List<Path>, message: String): Unit = throw NotImplementedError()
+    fun commit(project: Project, files: List<Path>, message: String) {
+        val changes = files.map { Change(null, CurrentContentRevision(VcsUtil.getFilePath(virtualFile(it)))) }
+        val errors = CvsCheckinEnvironment(project).commit(changes, message, CommitContext(), mutableSetOf())
+        errors?.firstOrNull()?.let { throw it }
+    }
 
     /** Updates the working copy [root] through the plugin's update environment and fails on any CVS error. */
-    fun update(project: Project, root: Path): Unit = throw NotImplementedError()
+    fun update(project: Project, root: Path) {
+        val session = CvsUpdateEnvironment(project).updateDirectories(
+            arrayOf(VcsUtil.getFilePath(virtualFile(root))), UpdatedFiles.create(), EmptyProgressIndicator(), Ref(),
+        )
+        session.exceptions.firstOrNull()?.let { throw it }
+        virtualFile(root).refresh(false, true)
+    }
 
     /** The revision CVS/Entries records for [file], read in [charset]. */
-    fun revision(file: Path, charset: Charset = Charsets.UTF_8): String = throw NotImplementedError()
+    fun revision(file: Path, charset: Charset = Charsets.UTF_8): String {
+        val entries = file.resolveSibling("CVS").resolve("Entries").readBytes().toString(charset)
+        val entry = entries.lines().firstOrNull { it.startsWith("/${file.fileName}/") }
+            ?: throw AssertionError("no entry for ${file.fileName} in $entries")
+        return entry.split('/')[2]
+    }
+
+    /** The VFS file for [path], refreshed from disk first so that new and edited files are seen. */
+    private fun virtualFile(path: Path): VirtualFile =
+        checkNotNull(LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path)) { "no VFS file for $path" }
+            .also { it.refresh(false, it.isDirectory) }
 
     /** Size and SHA-256 of the user's real `~/.cvspass`; `user.home` is redirected, so the home comes from the environment. */
     fun realPasswordFileFingerprint(): String {

@@ -59,6 +59,7 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
 
     private lateinit var work: Path
     private lateinit var repository: Path
+    private lateinit var temp: Path
     private lateinit var listener: ServerSocket
     private val connections = CopyOnWriteArrayList<Socket>()
     private val processes = CopyOnWriteArrayList<ProcessHandle>()
@@ -87,7 +88,7 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
         val cvs = CvsLocator.locate()
         work = Files.createTempDirectory(Files.createDirectories(WORK_ROOT), "server-")
         repository = work.resolve("repository")
-        val temp = Files.createDirectories(work.resolve("tmp"))
+        temp = Files.createTempDirectory(TEMP_ROOT, "cvs-test-tmp-")
         val home = Files.createDirectories(work.resolve("home"))
 
         val init = ProcessBuilder(cvs.toString(), "-f", "-d", repositoryPath, "init")
@@ -103,25 +104,6 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
         listener = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
         val command = listOf(cvs.toString(), "-f", "-T", msysPath(temp), "--allow-root=$repositoryPath", "pserver")
         Thread({ acceptLoop(command, home) }, "cvs-test-server-$port").apply { isDaemon = true }.start()
-        warmUp()
-    }
-
-    /**
-     * On a fresh msys server the first command that creates a directory in the server's temp directory fails with
-     * "Permission denied"; every later one works, whatever the names and however long one waits. The cause lies
-     * in the msys runtime, not in the plugin, so the server spends that first command on itself.
-     */
-    private fun warmUp() {
-        Socket(InetAddress.getLoopbackAddress(), port).use { socket ->
-            val password = PServerPasswordScrambler.getInstance().scramble(PASSWORD)
-            val request = "BEGIN AUTH REQUEST\n$repositoryPath\n${USERS.first()}\n$password\nEND AUTH REQUEST\n" +
-                "Root $repositoryPath\nValid-responses $VALID_RESPONSES\n" +
-                "Directory .\n$repositoryPath\nDirectory warm-up\n$repositoryPath/warm-up\nnoop\n"
-            socket.getOutputStream().apply { write(request.toByteArray(Charsets.US_ASCII)); flush() }
-            socket.shutdownOutput()
-            socket.soTimeout = 60_000
-            socket.getInputStream().readAllBytes()
-        }
     }
 
     private fun acceptLoop(command: List<String>, home: Path) {
@@ -196,6 +178,7 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
         }
         all.filter { it.isAlive }.forEach { it.destroyForcibly() }
         all.forEach { process -> runCatching { process.onExit().get(5, TimeUnit.SECONDS) } }
+        runCatching { temp.toFile().deleteRecursively() }
     }
 
     override fun beforeAll(context: ExtensionContext) = start()
@@ -209,8 +192,15 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
         /** The CVS users of the repository (design decision 13). */
         val USERS = listOf("alice", "bob")
 
-        /** Everything the servers write lies below this directory. */
+        /** The repositories, working copies and logs lie below this directory. */
         val WORK_ROOT: Path = Path.of("build", "cvs-test").toAbsolutePath()
+
+        /**
+         * The server's own temp files (`-T`) go to the system temp directory, not under [WORK_ROOT]: in the user
+         * profile on this workstation (an FSLogix container), creating the per-command temp directories failed
+         * with "Permission denied" now and then (design decision 19). Each server deletes its directory on close.
+         */
+        val TEMP_ROOT: Path = Path.of(System.getenv("TEMP") ?: System.getProperty("java.io.tmpdir"))
 
         /** `C:\Users\x` becomes `/c/Users/x`, the form msys cvs accepts in `--allow-root` and CVSROOTs. */
         fun msysPath(path: Path): String {
