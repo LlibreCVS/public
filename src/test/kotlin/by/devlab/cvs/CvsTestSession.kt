@@ -10,6 +10,7 @@ import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.util.Ref
 import com.intellij.openapi.vcs.ProjectLevelVcsManager
 import com.intellij.openapi.vcs.VcsDirectoryMapping
+import com.intellij.openapi.vcs.annotate.LineAnnotationAspect
 import com.intellij.openapi.vcs.changes.Change
 import com.intellij.openapi.vcs.changes.CommitContext
 import com.intellij.openapi.vcs.changes.CurrentContentRevision
@@ -202,7 +203,19 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
     data class AnnotatedLine(val revision: String, val author: String, val text: String)
 
     /** [file] annotated through the CVS annotation provider, line by line. */
-    fun annotate(project: Project, file: Path): List<AnnotatedLine> = throw NotImplementedError()
+    fun annotate(project: Project, file: Path): List<AnnotatedLine> {
+        val provider = checkNotNull(CvsVcs2.getInstance(project).annotationProvider)
+        val annotation = provider.annotate(virtualFile(file))
+        try {
+            val author = annotation.aspects.first { it.id == LineAnnotationAspect.AUTHOR }
+            val text = annotation.annotatedContent.orEmpty().lines()
+            return (0 until annotation.lineCount).map { line ->
+                AnnotatedLine(annotation.getLineRevisionNumber(line)?.asString().orEmpty(), author.getValue(line), text[line])
+            }
+        } finally {
+            annotation.dispose()
+        }
+    }
 
     /** Updates the working copy [root] through the plugin's update environment and fails on any CVS error. */
     fun update(project: Project, root: Path) {

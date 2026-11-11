@@ -121,6 +121,17 @@ class TestServerTest {
         assertArrayEquals(response(cp1251), transcode(CvsProtocolTranscoder.responses(Charsets.UTF_8, cp1251), response(Charsets.UTF_8)))
     }
 
+    // Found in 3.4: annotate sends file lines inside M responses, in the encoding the file was stored in; the
+    // server stores contents as the client's bytes, so a line that is not UTF-8 is already in the client's.
+    @Test
+    @DisplayName("Transcoder passes file text in responses unchanged")
+    fun transcoderPassesFileTextInResponsesUnchanged() {
+        val cp1251 = Charset.forName("windows-1251")
+        val annotateLine = "M 1.2          (bob      11-Nov-26): Вторая, изменена bob: ёЁ щЩ ъЪ\n".toByteArray(cp1251)
+
+        assertArrayEquals(annotateLine, transcode(CvsProtocolTranscoder.responses(Charsets.UTF_8, cp1251), annotateLine))
+    }
+
     private fun bytes(vararg parts: ByteArray): ByteArray = parts.fold(ByteArray(0)) { all, part -> all + part }
 
     private fun transcode(transcoder: CvsProtocolTranscoder, input: ByteArray): ByteArray {
