@@ -16,6 +16,8 @@
 package com.intellij.cvsSupport2.cvsoperations.common;
 
 import com.intellij.cvsSupport2.CvsUtil;
+import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -37,6 +39,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -184,26 +187,54 @@ public class FindAllRootsHelper {
   static boolean isTrackedChild(Path directory) throws IOException {
     Path parent = directory.getParent();
     if (parent == null || !isCvsWorkingCopyRoot(parent)) return false;
-    // Entries.Log 里的增删由后条覆盖，避免 update 尚未合并日志时误判。
-    String name = new String(directory.getFileName().toString().getBytes(Charset.defaultCharset()), StandardCharsets.ISO_8859_1);
+    // IntelliJCVS upstream-patch: the admin files are decoded with each usual CVS encoding (the CVS settings'
+    // encoding, UTF-8, the OS encoding) and the name matches if any of them yields it, so Cyrillic names
+    // written in UTF-8 or windows-1251 are recognized. A malformed decoding simply does not match.
+    String name = directory.getFileName().toString();
     String entry = "D/" + name + "/";
-    boolean tracked = false;
-    for (String line : Files.readAllLines(parent.resolve("CVS/Entries"), StandardCharsets.ISO_8859_1)) {
-      if (line.startsWith(entry)) tracked = true;
-    }
+    byte[] entries = Files.readAllBytes(parent.resolve("CVS/Entries"));
     Path log = parent.resolve("CVS/Entries.Log");
-    if (Files.isRegularFile(log, LinkOption.NOFOLLOW_LINKS)) {
-      for (String line : Files.readAllLines(log, StandardCharsets.ISO_8859_1)) {
-        if (line.startsWith("A " + entry)) tracked = true;
-        if (line.startsWith("R " + entry)) tracked = false;
+    byte[] logBytes = Files.isRegularFile(log, LinkOption.NOFOLLOW_LINKS) ? Files.readAllBytes(log) : new byte[0];
+    byte[] parentRepositoryBytes = Files.readAllBytes(parent.resolve("CVS/Repository"));
+    byte[] childRepositoryBytes = Files.readAllBytes(directory.resolve("CVS/Repository"));
+    boolean tracked = false;
+    boolean repositoryContinues = false;
+    for (Charset charset : adminFileCharsets()) {
+      // Entries.Log 里的增删由后条覆盖，避免 update 尚未合并日志时误判。
+      boolean listed = false;
+      for (String line : new String(entries, charset).split("\r?\n")) {
+        if (line.startsWith(entry)) listed = true;
       }
+      for (String line : new String(logBytes, charset).split("\r?\n")) {
+        if (line.startsWith("A " + entry)) listed = true;
+        if (line.startsWith("R " + entry)) listed = false;
+      }
+      tracked |= listed;
+      String parentRepository = new String(parentRepositoryBytes, charset).trim();
+      String childRepository = new String(childRepositoryBytes, charset).trim();
+      repositoryContinues |= childRepository.equals(parentRepository.replaceAll("/+$", "") + "/" + name);
     }
     if (!tracked) return false;
     String parentRoot = Files.readString(parent.resolve("CVS/Root"), StandardCharsets.ISO_8859_1).trim();
     String childRoot = Files.readString(directory.resolve("CVS/Root"), StandardCharsets.ISO_8859_1).trim();
-    String parentRepository = Files.readString(parent.resolve("CVS/Repository"), StandardCharsets.ISO_8859_1).trim();
-    String childRepository = Files.readString(directory.resolve("CVS/Repository"), StandardCharsets.ISO_8859_1).trim();
-    return parentRoot.equals(childRoot) && childRepository.equals(parentRepository.replaceAll("/+$", "") + "/" + name);
+    return parentRoot.equals(childRoot) && repositoryContinues;
+  }
+
+  // IntelliJCVS upstream-patch: candidate encodings of CVS admin files, see isTrackedChild.
+  private static @NotNull Set<Charset> adminFileCharsets() {
+    Set<Charset> charsets = new LinkedHashSet<>();
+    if (ApplicationManager.getApplication() != null) {
+      String configured = CvsApplicationLevelConfiguration.getInstance().ENCODING;
+      if (!CvsApplicationLevelConfiguration.DEFAULT.equals(configured) && Charset.isSupported(configured)) {
+        charsets.add(Charset.forName(configured));
+      }
+    }
+    charsets.add(StandardCharsets.UTF_8);
+    String nativeEncoding = System.getProperty("native.encoding");
+    if (nativeEncoding != null && Charset.isSupported(nativeEncoding)) {
+      charsets.add(Charset.forName(nativeEncoding));
+    }
+    return charsets;
   }
 
   private static @NotNull Path normalize(@NotNull Path path) {
