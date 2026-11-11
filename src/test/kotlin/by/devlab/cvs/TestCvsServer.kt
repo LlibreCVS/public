@@ -3,6 +3,7 @@ package by.devlab.cvs
 import org.junit.jupiter.api.extension.AfterAllCallback
 import org.junit.jupiter.api.extension.BeforeAllCallback
 import org.junit.jupiter.api.extension.ExtensionContext
+import org.netbeans.lib.cvsclient.connection.PServerPasswordScrambler
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -93,6 +94,25 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
         listener = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
         val command = listOf(cvs.toString(), "-f", "-T", msysPath(temp), "--allow-root=$repositoryPath", "pserver")
         Thread({ acceptLoop(command, home) }, "cvs-test-server-$port").apply { isDaemon = true }.start()
+        warmUp()
+    }
+
+    /**
+     * On a fresh msys server the first command that creates a directory in the server's temp directory fails with
+     * "Permission denied"; every later one works, whatever the names and however long one waits. The cause lies
+     * in the msys runtime, not in the plugin, so the server spends that first command on itself.
+     */
+    private fun warmUp() {
+        Socket(InetAddress.getLoopbackAddress(), port).use { socket ->
+            val password = PServerPasswordScrambler.getInstance().scramble(PASSWORD)
+            val request = "BEGIN AUTH REQUEST\n$repositoryPath\n${USERS.first()}\n$password\nEND AUTH REQUEST\n" +
+                "Root $repositoryPath\nValid-responses $VALID_RESPONSES\n" +
+                "Directory .\n$repositoryPath\nDirectory warm-up\n$repositoryPath/warm-up\nnoop\n"
+            socket.getOutputStream().apply { write(request.toByteArray(Charsets.US_ASCII)); flush() }
+            socket.shutdownOutput()
+            socket.soTimeout = 60_000
+            socket.getInputStream().readAllBytes()
+        }
     }
 
     private fun acceptLoop(command: List<String>, home: Path) {
