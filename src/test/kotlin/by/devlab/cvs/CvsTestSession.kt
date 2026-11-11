@@ -123,6 +123,21 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         if (!executor.hasNoErrors()) throw executor.firstError
     }
 
+    /** Maps [roots] (working copies) to CVS in [project]. */
+    fun mapToCvs(project: Project, vararg roots: Path): Unit = throw NotImplementedError()
+
+    /** Schedules [paths] (directories before the files in them) for addition, as the add dialog does on OK. */
+    fun add(project: Project, vararg paths: Path): Unit = throw NotImplementedError()
+
+    /** Commits [files] through the plugin's checkin environment and fails on any CVS error. */
+    fun commit(project: Project, files: List<Path>, message: String): Unit = throw NotImplementedError()
+
+    /** Updates the working copy [root] through the plugin's update environment and fails on any CVS error. */
+    fun update(project: Project, root: Path): Unit = throw NotImplementedError()
+
+    /** The revision CVS/Entries records for [file], read in [charset]. */
+    fun revision(file: Path, charset: Charset = Charsets.UTF_8): String = throw NotImplementedError()
+
     /** Size and SHA-256 of the user's real `~/.cvspass`; `user.home` is redirected, so the home comes from the environment. */
     fun realPasswordFileFingerprint(): String {
         val home = System.getenv("USERPROFILE") ?: System.getenv("HOME") ?: return "no home"
