@@ -186,6 +186,12 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
     /** The keyword substitution CVS/Entries records for [file] (e.g. `-kb`), or "" for the default. */
     fun keywordSubstitution(file: Path, charset: Charset = Charsets.UTF_8): String = entry(file, charset).split('/')[4]
 
+    /** One revision as the history shows it. */
+    data class Revision(val number: String, val author: String, val message: String)
+
+    /** The history of [file] from the CVS history provider, newest first. */
+    fun history(project: Project, file: Path): List<Revision> = throw NotImplementedError()
+
     /** Updates the working copy [root] through the plugin's update environment and fails on any CVS error. */
     fun update(project: Project, root: Path) {
         val session = CvsUpdateEnvironment(project).updateDirectories(
