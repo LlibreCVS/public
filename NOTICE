@@ -1,0 +1,24 @@
+IntelliJCVS
+Copyright 2026 Home Laboratory
+
+This product is built from third-party code. Their licenses are packaged in the plugin jar
+under META-INF/ and kept in the source tree under upstream/opencvs/.
+
+OpenCVS (https://github.com/jieyuexing/intellij-cvs-plugin), release 262.0.8
+  Community fork of JetBrains' CVS plugin, maintained by jieyuexing.
+  Licensed under the Apache License, Version 2.0 (META-INF/LICENSE).
+  IntelliJCVS changes a few of its files; README.md lists them.
+
+JetBrains CVS plugin (https://github.com/JetBrains/intellij-obsolete-plugins/tree/master/cvs)
+  Copyright 2000-2016 JetBrains s.r.o.
+  Licensed under the Apache License, Version 2.0 (META-INF/LICENSE).
+
+NetBeans JavaCVS client library (javacvs-src, smartcvs-src)
+  Modified source code of the NetBeans JavaCVS client library (http://javacvs.netbeans.org),
+  copyrighted by Sun Microsystems. Initial developer Robert Greig; contributions by Milos Kleint
+  and Thomas Singer.
+  Licensed under the Sun Public License, Version 1.0 (META-INF/sun-public-license.txt).
+
+Trilead SSH-2 for Java, build 213 (lib/trilead-ssh2-build213.jar)
+  Copyright (c) 2007-2008 Trilead AG (http://www.trilead.com)
+  Licensed under a BSD-style license (META-INF/trilead-ssh2-LICENSE.txt).

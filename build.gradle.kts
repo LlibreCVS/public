@@ -73,6 +73,23 @@ intellijPlatform {
         vendor {
             name = "Home Laboratory"
         }
+        description = """
+            <p>CVS support for IntelliJ IDEA: browse repositories, check out and update working copies, commit
+            changes with an optional tag, annotate files, inspect history, and work with branches and tags.
+            The plugin talks to CVS servers through Java libraries and never runs a <code>cvs</code> executable;
+            local repositories (<code>:local:</code>) are not supported.</p>
+            <p>Built on a community fork of JetBrains' CVS plugin (Apache License 2.0); the bundled NOTICE names
+            the sources and their licenses.</p>
+        """.trimIndent()
+        changeNotes = """
+            <ul>
+              <li>CVS operations from the imported plugin: connections, status, update, commit with tag, annotate,
+                  history, branches, tags and checkout.</li>
+              <li>Working-copy roots follow the CVS entries; Cyrillic directory names match in UTF-8 and in the
+                  encoding set in the CVS settings.</li>
+              <li>Local CVS repositories are rejected instead of running a <code>cvs</code> executable.</li>
+            </ul>
+        """.trimIndent()
         // Explicit, so that a change of the plugin's defaults cannot add an upper bound.
         ideaVersion {
             sinceBuild = "262"
@@ -90,6 +107,26 @@ intellijPlatform {
 
 kotlin {
     jvmToolchain(25)
+}
+
+// The vendor block can set the vendor's name but cannot drop the email and url of OpenCVS's vendor element, so
+// they are removed from the patched descriptor; the upstream file stays untouched (design decision 8).
+tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PatchPluginXmlTask>("patchPluginXml") {
+    doLast {
+        val descriptor = outputFile.get().asFile
+        descriptor.writeText(descriptor.readText().replace(Regex("""<vendor\b[^>]*>"""), "<vendor>"))
+    }
+}
+
+// Apache 2.0 section 4 and the Sun Public License attach to the distributed binary: the notice and every
+// license travel in the jar (design decision 16).
+tasks.processResources {
+    into("META-INF") {
+        from("NOTICE")
+        from("$upstream/LICENSE")
+        from("$upstream/javacvs-src/sun-public-license.txt")
+        from("$upstream/trilead-ssh2-build213/LICENSE.txt") { rename { "trilead-ssh2-LICENSE.txt" } }
+    }
 }
 
 tasks.withType<JavaCompile>().configureEach {
