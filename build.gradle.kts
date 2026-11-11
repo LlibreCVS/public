@@ -137,6 +137,11 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.test {
     useJUnitPlatform()
+    // Upstream reads $userdir/.cvspass whenever it builds pserver settings, also in background status updates;
+    // the tests must never read the real one (design decision 19).
+    val testHome = layout.buildDirectory.dir("test-home").get().asFile
+    doFirst { testHome.mkdirs() }
+    systemProperty("user.home", testHome.absolutePath)
     // PackagingTest inspects the plugin jar that goes into the distribution.
     val pluginJar = tasks.named<org.jetbrains.intellij.platform.gradle.tasks.ComposedJarTask>("composedJar").flatMap { it.archiveFile }
     inputs.file(pluginJar)

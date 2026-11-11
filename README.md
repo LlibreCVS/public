@@ -53,7 +53,7 @@ List them with `git log --oneline --grep "^upstream-patch:"`.
 3. Check upstream's `build.gradle.kts` for new source dirs, bundled modules or libraries and mirror them in
    `build.gradle.kts`.
 4. Run `./gradlew clean build verifyPlugin` and a `./gradlew runIde` smoke check, then update the version in
-   `NOTICE`, this README and the plugin description.
+   `NOTICE` and this README.
 
 ## Building
 
