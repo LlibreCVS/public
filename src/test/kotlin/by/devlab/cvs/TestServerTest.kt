@@ -1,5 +1,6 @@
 package by.devlab.cvs
 
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -7,6 +8,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.netbeans.lib.cvsclient.connection.PServerPasswordScrambler
 import java.io.BufferedReader
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.nio.charset.Charset
 import java.io.InputStreamReader
 import java.net.ConnectException
 import java.net.InetAddress
@@ -92,6 +96,37 @@ class TestServerTest {
                 assertEquals(listOf("I LOVE YOU", "ok"), answer.lines().filter { it.isNotEmpty() }, answer)
             }
         }
+    }
+
+    // Design decision 18: msys stores windows-1251 names mangled, so the pump converts protocol lines.
+    @Test
+    @DisplayName("Transcoder converts names and keeps payloads")
+    fun transcoderConvertsNamesAndKeepsPayloads() {
+        val cp1251 = Charset.forName("windows-1251")
+        val payload = byteArrayOf(0x0D, 0x0A, 0x00, 0x1A, 0xC4.toByte(), 0xEE.toByte(), 0x0A, 'E'.code.toByte(), 0x0A)
+        fun request(charset: Charset) = bytes(
+            "Directory Документы\n/repo/m/Документы\nModified данные.bin\nu=rw,g=r,o=r\n${payload.size}\n".toByteArray(charset),
+            payload,
+            "Argument Сообщение коммита\nci\n".toByteArray(charset),
+        )
+        fun response(charset: Charset) = bytes(
+            "M U m/Документы/данные.bin\nUpdated m/Документы/\n/repo/m/Документы/данные.bin\n/данные.bin/1.1///-kb\nu=rw,g=r,o=r\n${payload.size}\n".toByteArray(charset),
+            payload,
+            "Mbinary\n${payload.size}\n".toByteArray(charset),
+            payload,
+            "ok\n".toByteArray(charset),
+        )
+
+        assertArrayEquals(request(Charsets.UTF_8), transcode(CvsProtocolTranscoder.requests(cp1251, Charsets.UTF_8), request(cp1251)))
+        assertArrayEquals(response(cp1251), transcode(CvsProtocolTranscoder.responses(Charsets.UTF_8, cp1251), response(Charsets.UTF_8)))
+    }
+
+    private fun bytes(vararg parts: ByteArray): ByteArray = parts.fold(ByteArray(0)) { all, part -> all + part }
+
+    private fun transcode(transcoder: CvsProtocolTranscoder, input: ByteArray): ByteArray {
+        val output = ByteArrayOutputStream()
+        transcoder.copy(ByteArrayInputStream(input), output)
+        return output.toByteArray()
     }
 
     private fun authenticate(socket: Socket, server: TestCvsServer, user: String): String {
