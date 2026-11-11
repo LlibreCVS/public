@@ -28,6 +28,13 @@ public final class CvsRootChecker extends com.intellij.openapi.vcs.VcsRootChecke
     }
   }
 
+  // IntelliJCVS upstream-patch: a mapping on any working-copy directory is valid, not only on a root, so the
+  // IDE does not report a kept mapping of a tracked subdirectory as an extra mapping.
+  @Override
+  public boolean validateRoot(@NotNull VirtualFile file) {
+    return file.isDirectory() && FindAllRootsHelper.isCvsWorkingCopyRoot(Path.of(file.getPath()));
+  }
+
   @Override
   public boolean isVcsDir(@NotNull String name) {
     return "CVS".equals(name);
