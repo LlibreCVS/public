@@ -1,0 +1,224 @@
+import java.security.MessageDigest
+
+// Maintainer: jieyuexing
+// Fork of: https://github.com/JetBrains/intellij-obsolete-plugins/tree/master/cvs
+//
+// Install range: IU-232 … IU-262.* (both maintainer IDEs).
+// Compile against local 2026.2 (APIs we adapted to) with Java 17 bytecode
+// so IU-232 can load the class files (Java 25 bytecode would be rejected).
+
+plugins {
+    id("java")
+    id("org.jetbrains.intellij.platform") version "2.18.1"
+}
+
+group = providers.gradleProperty("pluginGroup").get()
+version = providers.gradleProperty("pluginVersion").get()
+
+repositories {
+    mavenCentral()
+    intellijPlatform {
+        defaultRepositories()
+    }
+}
+
+sourceSets {
+    main {
+        java.setSrcDirs(
+            listOf(
+                "cvs-core/src",
+                "cvs-plugin/src",
+                "javacvs-src",
+                "smartcvs-src",
+            )
+        )
+        resources.setSrcDirs(
+            listOf(
+                "cvs-core/resources",
+                "cvs-plugin/resources",
+                "javacvs-src",
+                "smartcvs-src",
+            )
+        )
+    }
+    test {
+        java.setSrcDirs(listOf("testSource"))
+    }
+}
+
+dependencies {
+    implementation(files("lib/trilead-ssh2-build213.jar"))
+
+    intellijPlatform {
+        // Prefer primary local 2026.2 for compile classpath (source was adapted to it).
+        val localCandidates = listOf(
+            file("${System.getProperty("user.home")}/Applications/IntelliJ IDEA.app"),
+            file("/Applications/IntelliJ IDEA.app"),
+            file("/Applications/IntelliJ IDEA Ultimate.app"),
+        )
+        val local262 = localCandidates.firstOrNull { app ->
+            val info = app.resolve("Contents/Resources/product-info.json")
+            info.isFile && info.readText().contains("2026.2")
+        }
+        if (local262 != null) {
+            local(local262)
+        } else {
+            create(
+                providers.gradleProperty("platformType").orElse("IU"),
+                providers.gradleProperty("platformVersion").orElse("2026.2.1"),
+            )
+        }
+
+        pluginVerifier()
+        zipSigner()
+
+        bundledModule("intellij.platform.vcs.impl")
+        bundledModule("intellij.platform.vcs.impl.lang")
+        bundledLibrary("lib/intellij.libraries.microba.jar")
+    }
+}
+
+java {
+    // JDK 25 required to *read* 2026.2 platform class files (major 69).
+    // Still emit release=17 so IDEA 2023.2 (232) can *load* our plugin classes.
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(25))
+    }
+}
+
+intellijPlatform {
+    buildSearchableOptions = false
+
+    // 两代维护目标加中间版本；跨产品调查通过显式开关运行。
+    pluginVerification {
+        ides {
+            local(file("${System.getProperty("user.home")}/Applications/IntelliJ IDEA.app"))
+            create("IU", "2023.2.8")
+            create("IU", "2024.3.6")
+            // 可传已校验发行包路径离线验证；默认仍下载同一精确版本。
+            val ide253 = providers.gradleProperty("verifier253Path").orNull
+            if (ide253 != null) local(file(ide253)) else create("IU", "2025.3.6.1")
+            val ide261 = providers.gradleProperty("verifier261Path").orNull
+            if (ide261 != null) local(file(ide261)) else create("IU", "2026.1.5")
+            if (providers.gradleProperty("verifyCrossProduct").orNull == "true") {
+                create("WS", "2026.2")
+            }
+        }
+    }
+
+    pluginConfiguration {
+        id = "io.github.jieyuexing.cvs"
+        name = "OpenCVS"
+        version = providers.gradleProperty("pluginVersion")
+        changeNotes = """
+            <p><b>262.0.8</b></p>
+            <ul>
+              <li>Recognize tracked CVS subdirectories as part of their parent working copy while retaining independent nested checkouts.</li>
+              <li>Automatically remove redundant CVS directory mappings only when their parent remains owned by CVS; preserve child-only, other VCS and none mappings, with before/after history for rollback.</li>
+              <li>CVS 受管子目录归属父工作副本，不再误判为独立根；独立嵌套 checkout 仍可发现。</li>
+              <li>仅在父目录仍归 CVS 管理时自动收敛多余的 CVS 目录映射；保留仅映射子目录、其他 VCS 和 none 的边界，并记录变更前后映射以便回退。</li>
+            </ul>
+            <p><b>262.0.7</b></p>
+            <ul>
+              <li>Stop re-uploading files whose timestamps drifted but whose content is unchanged (for example after copying a working copy): content hashes are cached locally, and the server's confirmation repairs the recorded timestamps.</li>
+              <li>Plain updates that would upload more than 20 MB now run in batches with per-batch progress; finished batches persist even if the update is canceled. Merge, clean-copy, sticky, revision/date and keyword updates still run as a single request.</li>
+              <li>时间戳漂移但内容未变的文件（例如复制过工作副本后）不再每次更新都整份上传：本地缓存内容哈希，并借服务器确认修复记录的时间戳。</li>
+              <li>普通更新的上传量超过 20 MB 时分批执行并显示每批进度，取消后已完成的批次仍然保留；带合并、干净副本、粘性标记、版本/日期或关键字替换选项的更新仍一次执行。</li>
+            </ul>
+            <p><b>262.0.6</b></p>
+            <ul>
+              <li>Fix update, history and other operations hanging forever once the server stayed silent longer than the read timeout; they now fail with the timeout error and remain cancellable.</li>
+              <li>Raise the default timeout from 10 to 300 seconds; the connect timeout stays capped at 10 seconds.</li>
+              <li>修复服务器静默超过读超时后更新、历史等操作永久卡住的问题；现在会报超时错误，且可随时取消。</li>
+              <li>默认超时由 10 秒调为 300 秒；建立连接的超时仍最多 10 秒。</li>
+            </ul>
+            <p><b>262.0.5</b></p>
+            <ul>
+              <li>Remove the remaining internal root API overrides. Detect CVS roots through public APIs and automatically expand container mappings after a complete, cancellable background scan.</li>
+              <li>Keep nested working-copy changes visible and preserve IDEA 2023.2 dirty-scope handling. Mapping migration is idempotent and records its before/after paths for rollback.</li>
+              <li>移除剩余的内部根 API 覆写，改用公开 API；可取消的后台扫描完整结束后，自动将容器映射展开为工作副本根映射。</li>
+              <li>保留嵌套工作副本改动与 IDEA 2023.2 的 dirty-scope 处理；映射迁移幂等，并保存前后路径以便回退。</li>
+            </ul>
+            <p><b>262.0.4</b></p>
+            <ul>
+              <li>Replace IntelliJ Platform Internal API usages (CharsetToolkit, SLRUCache, FileChooserFactoryImpl, ChangesUtil, ActionsBundle, IdeBundle) with public APIs or plugin-owned code; behavior is kept.</li>
+              <li>Move remaining hard-coded UI texts to the plugin bundle; English and Chinese UI follow the IDE language.</li>
+              <li>将 IntelliJ 平台内部 API（CharsetToolkit、SLRUCache、FileChooserFactoryImpl、ChangesUtil、ActionsBundle、IdeBundle）替换为公开 API 或插件自有实现，行为保持不变。</li>
+              <li>剩余写死的界面文字改为插件语言包；中英文界面随 IDE 语言切换。</li>
+            </ul>
+            <p><b>262.0.3</b></p>
+            <ul>
+              <li>Prevent canceled or failed CVS content requests from caching an empty or partial diff baseline.</li>
+              <li>Ignore and refresh zero-byte BaseRevisions caches left by earlier versions.</li>
+              <li>取消或失败的 CVS 内容请求不再缓存空的或部分的 diff 基线。</li>
+              <li>忽略并刷新早期版本留下的零字节 BaseRevisions 缓存。</li>
+            </ul>
+        """.trimIndent()
+
+        ideaVersion {
+            // Allow install on maintainer secondary IDE (232) through primary (262).
+            sinceBuild = providers.gradleProperty("pluginSinceBuild").orElse("232")
+            untilBuild = providers.gradleProperty("pluginUntilBuild").orElse("262.*")
+        }
+    }
+}
+
+tasks {
+    withType<JavaCompile>().configureEach {
+        options.encoding = "UTF-8"
+        options.release.set(17)
+        options.compilerArgs.add("-Xlint:none")
+    }
+
+    named<Test>("test") {
+        enabled = false
+    }
+}
+
+// 2.18.1 默认任务把 password 放入 Java argv；替换执行动作并保持官方文件接口。
+intellijPlatform {
+    signing {
+        privateKeyFile = file("${System.getProperty("user.home")}/Library/Application Support/intellij-cvs-plugin/signing/private-key.pem")
+        certificateChainFile = layout.projectDirectory.file("docs/signing-cert.pem")
+        password = providers.environmentVariable("OPENCVS_SIGNING_PASSWORD")
+    }
+    publishing {
+        token = providers.environmentVariable("ORG_GRADLE_PROJECT_intellijPlatformPublishingToken")
+    }
+}
+tasks.named<org.jetbrains.intellij.platform.gradle.tasks.SignPluginTask>("signPlugin") {
+    actions.clear()
+    outputs.upToDateWhen { false }
+    doLast {
+        val signer = zipSignerExecutable.get().asFile
+        providers.exec {
+            commandLine(
+                "${System.getProperty("java.home")}/bin/java", "-cp", signer.absolutePath,
+                file("scripts/SigningBridge.java").absolutePath, signer.absolutePath,
+                archiveFile.get().asFile.absolutePath, signedArchiveFile.get().asFile.absolutePath,
+                privateKeyFile.get().asFile.absolutePath, certificateChainFile.get().asFile.absolutePath,
+            )
+        }.result.get().assertNormalExitValue()
+    }
+}
+// 发布只接受 prepare 锁定的同一个签名 ZIP；不重新构建或重新签名。
+tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PublishPluginTask>("publishPlugin") {
+    setDependsOn(emptyList<Any>())
+    archiveFile = layout.buildDirectory.file("distributions/intellij-cvs-plugin-${project.version}.zip")
+    doFirst {
+        check(providers.environmentVariable("OPENCVS_MARKETPLACE_PREPARED_SHA256").isPresent) {
+            "请通过 scripts/release.py marketplace 使用已核验回执"
+        }
+        val actual = MessageDigest.getInstance("SHA-256")
+            .digest(archiveFile.get().asFile.readBytes()).joinToString("") { "%02x".format(it) }
+        check(actual == providers.environmentVariable("OPENCVS_MARKETPLACE_PREPARED_SHA256").get()) {
+            "签名 ZIP 已变化；拒绝上传"
+        }
+    }
+}
+
+// 单独核验最终同名发布资产，不触发重签。
+tasks.named<org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginSignatureTask>("verifyPluginSignature") {
+    inputArchiveFile = layout.buildDirectory.file("distributions/intellij-cvs-plugin-${project.version}.zip")
+    certificateChainFile = layout.projectDirectory.file("docs/signing-cert.pem")
+}
