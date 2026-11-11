@@ -120,8 +120,11 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
 
     /** Checks [module] out as [user] into [target] (at [tag], if given) and returns the module's working copy. */
     fun checkout(user: String, module: String, target: Path, tag: String? = null): Path {
-        if (tag != null) throw NotImplementedError()
-        run(CommandCvsHandler.createCheckoutHandler(environment(user), arrayOf(module), target.toFile(), false, false, null))
+        val environment = environment(user).apply {
+            // What the checkout dialog's "branch or tag" field sets.
+            if (tag != null) DATE_OR_REVISION_SETTINGS.apply { USE_BRANCH = true; BRANCH = tag }
+        }
+        run(CommandCvsHandler.createCheckoutHandler(environment, arrayOf(module), target.toFile(), false, false, null))
         return target.resolve(module)
     }
 
@@ -167,10 +170,21 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
     }
 
     /** Commits [files] with the commit dialog's tag-after-commit option set to [tag]. */
-    fun commitWithTag(project: Project, files: List<Path>, message: String, tag: String): Unit = throw NotImplementedError()
+    fun commitWithTag(project: Project, files: List<Path>, message: String, tag: String) {
+        val configuration = CvsConfiguration.getInstance(project)
+        val (previousOption, previousName) = configuration.TAG_AFTER_PROJECT_COMMIT to configuration.TAG_AFTER_PROJECT_COMMIT_NAME
+        configuration.TAG_AFTER_PROJECT_COMMIT = true
+        configuration.TAG_AFTER_PROJECT_COMMIT_NAME = tag
+        try {
+            commit(project, files, message)
+        } finally {
+            configuration.TAG_AFTER_PROJECT_COMMIT = previousOption
+            configuration.TAG_AFTER_PROJECT_COMMIT_NAME = previousName
+        }
+    }
 
     /** The keyword substitution CVS/Entries records for [file] (e.g. `-kb`), or "" for the default. */
-    fun keywordSubstitution(file: Path, charset: Charset = Charsets.UTF_8): String = throw NotImplementedError()
+    fun keywordSubstitution(file: Path, charset: Charset = Charsets.UTF_8): String = entry(file, charset).split('/')[4]
 
     /** Updates the working copy [root] through the plugin's update environment and fails on any CVS error. */
     fun update(project: Project, root: Path) {
@@ -182,11 +196,13 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
     }
 
     /** The revision CVS/Entries records for [file], read in [charset]. */
-    fun revision(file: Path, charset: Charset = Charsets.UTF_8): String {
+    fun revision(file: Path, charset: Charset = Charsets.UTF_8): String = entry(file, charset).split('/')[2]
+
+    /** The CVS/Entries line of [file]: `/name/revision/timestamp/options/tag`. */
+    private fun entry(file: Path, charset: Charset): String {
         val entries = file.resolveSibling("CVS").resolve("Entries").readBytes().toString(charset)
-        val entry = entries.lines().firstOrNull { it.startsWith("/${file.fileName}/") }
+        return entries.lines().firstOrNull { it.startsWith("/${file.fileName}/") }
             ?: throw AssertionError("no entry for ${file.fileName} in $entries")
-        return entry.split('/')[2]
     }
 
     /** The VFS file for [path], refreshed from disk first so that new and edited files are seen. */
