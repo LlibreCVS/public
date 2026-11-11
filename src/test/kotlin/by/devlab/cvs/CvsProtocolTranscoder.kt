@@ -3,7 +3,10 @@ package by.devlab.cvs
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction
 
 /**
  * Copies one direction of a CVS client/server stream and re-encodes its text lines from [from] to [to], while file
@@ -48,8 +51,22 @@ class CvsProtocolTranscoder private constructor(
         }
     }
 
-    private fun convert(line: ByteArray): ByteArray =
-        if (line.all { it >= 0 }) line else String(line, from).toByteArray(to)
+    /**
+     * Re-encodes [line] from [from] to [to]. A line that is not valid in [from] is passed unchanged: it carries file
+     * text (annotate lines), which the server stores as the client's bytes and so is already in [to].
+     */
+    private fun convert(line: ByteArray): ByteArray {
+        if (line.all { it >= 0 }) return line
+        val text = try {
+            from.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(line))
+        } catch (_: CharacterCodingException) {
+            return line
+        }
+        return text.toString().toByteArray(to)
+    }
 
     private fun firstWord(line: ByteArray): String =
         String(line, Charsets.ISO_8859_1).trimEnd('\n').substringBefore(' ')
