@@ -190,7 +190,13 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
     data class Revision(val number: String, val author: String, val message: String)
 
     /** The history of [file] from the CVS history provider, newest first. */
-    fun history(project: Project, file: Path): List<Revision> = throw NotImplementedError()
+    fun history(project: Project, file: Path): List<Revision> {
+        val provider = checkNotNull(CvsVcs2.getInstance(project).vcsHistoryProvider)
+        val session = checkNotNull(provider.createSessionFor(VcsUtil.getFilePath(virtualFile(file)))) { "no history for $file" }
+        return session.revisionList
+            .sortedByDescending { it.revisionNumber }
+            .map { Revision(it.revisionNumber.asString(), it.author.orEmpty(), it.commitMessage.orEmpty().trimEnd()) }
+    }
 
     /** Updates the working copy [root] through the plugin's update environment and fails on any CVS error. */
     fun update(project: Project, root: Path) {
