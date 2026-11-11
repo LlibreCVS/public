@@ -25,8 +25,8 @@ class WorkingCopyRootTest {
     @TempDir
     lateinit var temp: Path
 
-    private val repository = ":pserver:anonymous@cvs.example.org:/cvsroot"
-    private val otherRepository = ":ext:dev@cvs.example.net:/var/cvs"
+    private val repository = ":pserver:anonymous@cvs.example.invalid:/cvsroot"
+    private val otherRepository = ":ext:dev@cvs.other.invalid:/var/cvs"
     private val windows1251 = Charset.forName("windows-1251")
 
     @Test
@@ -145,6 +145,24 @@ class WorkingCopyRootTest {
         withCvsEncoding("windows-1251") {
             assertFalse(isRoot(utf8Entries))
             assertFalse(isRoot(cp1251Entries))
+        }
+    }
+
+    // Proves the CVS-settings candidate on its own: no workstation uses KOI8-R as its native encoding, and UTF-8
+    // decodes these bytes to something else (the windows-1251 test could also pass through native.encoding).
+    @Test
+    @DisplayName("Configured encoding is used for directory names")
+    fun configuredEncodingIsUsedForDirectoryNames() {
+        val koi8r = Charset.forName("KOI8-R")
+        val top = topWorkingCopy()
+        val sub = FakeWorkingCopy.write(
+            top.resolve("исходники").createDirectories(), repository, "module/исходники", charset = koi8r,
+        )
+        FakeWorkingCopy.track(top, sub, koi8r)
+
+        assertTrue(isRoot(sub), "without the setting the KOI8-R name must not match")
+        withCvsEncoding("KOI8-R") {
+            assertFalse(isRoot(sub))
         }
     }
 

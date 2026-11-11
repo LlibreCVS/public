@@ -40,8 +40,8 @@ class WorkingCopyDetectionTest {
     private val project = projectFixture(projectPath, openAfterCreation = true)
     private val module = project.moduleFixture(projectPath, addPathToSourceRoot = true)
 
-    private val repository = ":pserver:anonymous@cvs.example.org:/cvsroot"
-    private val otherRepository = ":ext:dev@cvs.example.net:/var/cvs"
+    private val repository = ":pserver:anonymous@cvs.example.invalid:/cvsroot"
+    private val otherRepository = ":ext:dev@cvs.other.invalid:/var/cvs"
 
     @Test
     @DisplayName("Project directory at the top of a working copy")

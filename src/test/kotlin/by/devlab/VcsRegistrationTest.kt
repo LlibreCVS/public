@@ -91,7 +91,7 @@ class VcsRegistrationTest {
         module.get()
         val content = contentPath.get()
         val mapped = FakeWorkingCopy.write(
-            Files.createDirectories(content.resolve("mapped")), ":pserver:anonymous@cvs.example.org:/cvsroot",
+            Files.createDirectories(content.resolve("mapped")), ":pserver:anonymous@cvs.example.invalid:/cvsroot",
         )
         Files.writeString(mapped.resolve("Main.txt"), "mapped\n")
         val sibling = Files.createDirectories(content.resolve("sibling"))
