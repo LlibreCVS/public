@@ -1,7 +1,10 @@
 package by.devlab.vcs
 
+import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption.APPEND
+import java.nio.file.StandardOpenOption.CREATE
 import java.nio.file.attribute.FileTime
 import kotlin.io.path.isDirectory
 import kotlin.io.path.readBytes
@@ -14,22 +17,36 @@ import kotlin.io.path.relativeTo
 object FakeWorkingCopy {
 
     /**
-     * Makes [dir] a CVS working directory of [root] (the exact content of the first line of CVS/Root, written
-     * with [lineEnding]) and returns it.
+     * Makes [dir] a CVS working directory and returns it: CVS/Root holds [root], CVS/Repository holds
+     * [repository] (encoded in [charset]), each followed by [lineEnding], and CVS/Entries is empty.
      */
-    fun write(dir: Path, root: String, lineEnding: String = "\n"): Path {
+    fun write(
+        dir: Path,
+        root: String,
+        repository: String = "module/${dir.fileName}",
+        lineEnding: String = "\n",
+        charset: Charset = Charsets.UTF_8,
+    ): Path {
         val admin = Files.createDirectories(dir.resolve("CVS"))
         Files.writeString(admin.resolve("Root"), root + lineEnding)
-        Files.writeString(admin.resolve("Repository"), "module/${dir.fileName}$lineEnding")
-        Files.writeString(admin.resolve("Entries"), "D$lineEnding")
+        Files.write(admin.resolve("Repository"), (repository + lineEnding).toByteArray(charset))
+        Files.write(admin.resolve("Entries"), ByteArray(0))
         return dir
     }
 
-    /** Writes [content] as the whole CVS/Root file of [dir], creating CVS/ when needed. */
-    fun writeRootFile(dir: Path, content: String): Path {
-        val admin = Files.createDirectories(dir.resolve("CVS"))
-        Files.writeString(admin.resolve("Root"), content)
-        return dir
+    /** Lists [child] as a directory in the CVS/Entries of [parent], with its name encoded in [charset]. */
+    fun track(parent: Path, child: Path, charset: Charset = Charsets.UTF_8): Path {
+        append(parent.resolve("CVS/Entries"), "D/${child.fileName}////\n", charset)
+        return child
+    }
+
+    /** Appends [line] (without its line ending) to the CVS/Entries.Log of [parent]. */
+    fun logEntry(parent: Path, line: String, charset: Charset = Charsets.UTF_8) {
+        append(parent.resolve("CVS/Entries.Log"), "$line\n", charset)
+    }
+
+    private fun append(file: Path, text: String, charset: Charset) {
+        Files.write(file, text.toByteArray(charset), CREATE, APPEND)
     }
 
     /** One file or directory of a snapshot. */

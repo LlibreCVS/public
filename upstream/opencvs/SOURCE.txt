@@ -1,0 +1,47 @@
+Provenance
+==========
+Local path:  planet-resources/planet-projects/intellij-plugins/intellij-cvs-plugin
+Copied from: planet-resources/planet-projects/archive/intellij-obsolete-plugins/cvs
+Upstream:    JetBrains intellij-obsolete-plugins (CVS plugin)
+             https://github.com/JetBrains/intellij-obsolete-plugins/tree/master/cvs
+License:     Apache License 2.0 (see LICENSE)
+Copy date:   2026-07-31
+Purpose:     Community maintenance fork for GitHub publication
+
+Fork identity (maintainer = jieyuexing)
+--------------------------------------
+This is a fork of:
+  https://github.com/JetBrains/intellij-obsolete-plugins/tree/master/cvs
+GitHub repo (planned): https://github.com/jieyuexing/intellij-cvs-plugin
+plugin id:             io.github.jieyuexing.cvs   (NOT JetBrains id "CVS")
+plugin display name:   OpenCVS
+vendor:                jieyuexing
+vendor url:            https://github.com/jieyuexing
+vendor email:          jieyuexing@outlook.com
+Maven/Gradle group:    io.github.jieyuexing
+version series:        262.0 (aligns with IDEA 2026.2 / platform 262; official last was 223.0)
+
+Official Marketplace (frozen)
+-----------------------------
+Listing:   https://plugins.jetbrains.com/plugin/10746-cvs
+Last ver:  223.0  (since 203.1 — until 221.*; IDEA 2020.3 — 2022.1.4)
+Posture:   JetBrains line stopped advancing; community fork restarts maintenance.
+Early policy: only IDE versions the maintainer actually uses are prioritized.
+Active targets (2026-07):
+  primary:   IntelliJ IDEA 2026.2.1  (platform ~262.*; compileJava + buildPlugin green)
+  secondary: IntelliJ IDEA 2023.2.8  (platform ~232.*)
+Artifact:    build/distributions/intellij-cvs-plugin-262.0.zip
+Build notes: docs/platform-2026.2-notes.md
+
+
+Intentionally unchanged
+-----------------------
+- Java packages under com.intellij.cvsSupport2.* (high churn; legal under Apache-2.0)
+- VCS protocol name / administrative area "CVS" (on-disk CVS/ metadata)
+- Action ids and most internal identifiers
+
+Notes
+-----
+- Build wiring (standalone settings.gradle.kts / wrapper) not fully adapted yet.
+- Original parent build targeted IntelliJ platform 2022.3.
+- Subdirs: cvs-core, cvs-plugin, javacvs-src, smartcvs-src, testSource, trilead-ssh2-build213, lib/

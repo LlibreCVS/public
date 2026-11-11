@@ -1,0 +1,159 @@
+<idea-plugin>
+  <name>OpenCVS</name>
+  <id>io.github.jieyuexing.cvs</id>
+  <vendor email="jieyuexing@outlook.com" url="https://github.com/jieyuexing">jieyuexing</vendor>
+  <resource-bundle>messages.CvsBundle</resource-bundle>
+  <category>VCS Integration</category>
+  <description><![CDATA[
+    <p>Not affiliated with the OpenBSD OpenCVS project or JetBrains.</p>
+    <p><b>OpenCVS</b> brings CVS version control to maintained IntelliJ IDEA installations.
+    Browse repositories, check out and update working copies, commit changes, inspect history,
+    compare revisions, and manage CVS settings from the IDE. English and Chinese UI resources
+    follow the IDE display language.</p>
+    <p>This is an independent community fork of JetBrains' frozen CVS plugin, maintained by
+    jieyuexing. It is not an official JetBrains product and is not affiliated with JetBrains.</p>
+    <p>The declared installation range is IntelliJ IDEA 2023.2 through 2026.2
+    (builds 232–262.*). Maintenance targets are 2023.2.8 and 2026.2.1; this range is not a
+    guarantee that every API path has been validated. See the source repository's platform
+    notes for compatibility findings and outstanding runtime checks.</p>
+    <p><a href="https://github.com/jieyuexing/intellij-cvs-plugin">Source code and issue tracker</a> ·
+    <a href="https://github.com/jieyuexing/intellij-cvs-plugin/blob/main/LICENSE">Apache License 2.0</a> ·
+    <a href="https://github.com/JetBrains/intellij-obsolete-plugins/tree/master/cvs">Original CVS source</a></p>
+    <p>与 OpenBSD OpenCVS 项目及 JetBrains 均无隶属关系。</p>
+    <p><b>OpenCVS</b> 为仍在维护的 IntelliJ IDEA 提供 CVS 版本控制。
+    可在 IDE 中浏览仓库、检出和更新工作副本、提交更改、查看历史、比较修订并管理 CVS 设置。
+    界面文案随 IDE 显示语言在中英文之间切换。</p>
+    <p>本插件是 JetBrains 已冻结 CVS 插件的独立社区分支，由 jieyuexing 维护。
+    它不是 JetBrains 官方产品，与 JetBrains 无隶属关系。</p>
+    <p>声明的安装范围为 IntelliJ IDEA 2023.2 至 2026.2（构建号 232–262.*）。
+    维护目标为 2023.2.8 与 2026.2.1；该范围不保证每一条 API 路径均已验证。
+    兼容性结论与尚未完成的运行时检查见源码仓库的平台说明。</p>
+    <p><a href="https://github.com/jieyuexing/intellij-cvs-plugin">源码与问题跟踪</a> ·
+    <a href="https://github.com/jieyuexing/intellij-cvs-plugin/blob/main/LICENSE">Apache License 2.0</a> ·
+    <a href="https://github.com/JetBrains/intellij-obsolete-plugins/tree/master/cvs">原始 CVS 源码</a></p>
+  ]]></description>
+
+  <depends>com.intellij.modules.lang</depends>
+  <depends>com.intellij.modules.vcs</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <registryKey key="cvs.roots.refresh.uses.vfs" defaultValue="true"
+                 description="Should CVS roots refresh after update use VFS"/>
+    <registryKey key="cvs.server.output.max.lines" defaultValue="1000"
+                 description="The maximum number of lines that are displayed per command in the CVS console"/>
+    <checkoutProvider implementation="com.intellij.cvsSupport2.checkout.CvsCheckoutProvider"/>
+
+    <applicationService serviceInterface="com.intellij.openapi.cvsIntegration.CvsServices"
+                   serviceImplementation="com.intellij.cvsSupport2.impl.CvsServicesImpl"/>
+    <applicationService serviceImplementation="com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration"/>
+    <applicationService serviceImplementation="com.intellij.cvsSupport2.application.CvsEntriesManager"/>
+    <applicationService serviceImplementation="com.intellij.cvsSupport2.connections.ssh.SSHPasswordProviderImpl"/>
+    <applicationService serviceImplementation="com.intellij.cvsSupport2.config.ImportConfiguration"/>
+    <applicationService serviceImplementation="com.intellij.cvsSupport2.connections.ssh.SshConnectionPool"/>
+    <applicationService serviceImplementation="com.intellij.cvsSupport2.connections.ssh.EmptyPool"/>
+    <applicationService serviceImplementation="com.intellij.cvsSupport2.connections.ssh.SocksAuthenticatorManager"/>
+
+    <projectService serviceImplementation="com.intellij.cvsSupport2.ui.CvsTabbedWindow"/>
+    <projectService serviceImplementation="com.intellij.cvsSupport2.config.CvsConfiguration"/>
+    <projectService serviceImplementation="com.intellij.cvsSupport2.application.CvsStorageSupportingDeletionComponent"/>
+    <projectService serviceImplementation="com.intellij.cvsSupport2.cvsstatuses.CvsLocalContentBaseline"/>
+
+    <projectService serviceImplementation="com.intellij.cvsSupport2.cvsoperations.common.CvsRootMappingHistory"/>
+    <vcsRootChecker implementation="com.intellij.cvsSupport2.cvsoperations.common.CvsRootChecker"/>
+
+    <vcsCheckinHandlerFactory implementation="com.intellij.cvsSupport2.CvsCheckinHandlerFactory"/>
+
+    <search.projectOptionsTopHitProvider implementation="com.intellij.cvsSupport2.config.CvsOptionsTopHitProvider"/>
+    <vcs name="CVS" vcsClass="com.intellij.cvsSupport2.CvsVcs2" displayName="CVS" administrativeAreaName="CVS"/>
+  </extensions>
+
+  <actions>
+    <action id="Cvs.Import" class="com.intellij.cvsSupport2.actions.ImportAction">
+      <add-to-group group-id="Vcs.Import"/>
+      <add-to-group group-id="Vcs.Operations.Popup.NonVcsAware" relative-to-action="Start.Use.Vcs" anchor="before"/>
+    </action>
+
+    <action id="Cvs.BrowseCVSRepository" class="com.intellij.cvsSupport2.actions.BrowseCvsRepositoryAction">
+      <add-to-group group-id="Vcs.Browse"/>
+    </action>
+
+    <group id="CvsGlobalGroup" class="com.intellij.cvsSupport2.actions.Cvs2Group" popup="true">
+      <add-to-group group-id="VcsGlobalGroup" anchor="after" relative-to-action="Vcs.Specific"/>
+      <separator/>
+      <action id="GlobalSettings" class="com.intellij.cvsSupport2.actions.GlobalSettingsAction"/>
+      <action id="ConfigureCvsRoots" class="com.intellij.cvsSupport2.actions.ConfigureCvsRootsAction"/>
+      <action id="MigrateCvsRoot" class="com.intellij.cvsSupport2.actions.MigrateCvsRootAction"/>
+      <separator/>
+      <action id="Cvs.VerifyLocalContentWithRepository" class="com.intellij.cvsSupport2.actions.VerifyLocalContentWithRepositoryAction"/>
+      <action id="Cvs.CreateLocalContentBaseline" class="com.intellij.cvsSupport2.actions.CreateLocalContentBaselineAction"/>
+      <action id="Cvs.ClearLocalContentBaseline" class="com.intellij.cvsSupport2.actions.ClearLocalContentBaselineAction"/>
+      <separator/>
+    </group>
+
+    <group id="CvsFilePopupGroup" class="com.intellij.cvsSupport2.actions.Cvs2Group" popup="true">
+      <add-to-group group-id="VcsGroup" anchor="last"/>
+    </group>
+
+    <action id="Cvs.GetFromRepository" class="com.intellij.cvsSupport2.actions.GetFileFromRepositoryAction">
+      <add-to-group group-id="UpdateActionGroup" anchor="last"/>
+    </action>
+
+    <group id="AddOptionDialogActionGroup">
+      <action id="Cvs.Ignore" class="com.intellij.cvsSupport2.actions.IgnoreFileAction"/>
+    </group>
+
+    <group id="CvsActions" class="com.intellij.cvsSupport2.actions.Cvs2Group">
+      <reference id="CheckinFiles"/>
+      <reference id="ChangesView.Revert"/>
+      <reference id="UpdateFiles"/>
+      <reference id="CheckStatusForFiles"/>
+      <action id="Cvs.Checkout" class="com.intellij.cvsSupport2.actions.CheckoutFileAction"/>
+      <action id="Cvs.MergeAction" class="com.intellij.cvsSupport2.actions.merge.MergeAction"/>
+
+      <separator/>
+
+
+      <action id="Cvs.Add" class="com.intellij.cvsSupport2.actions.AddFileOrDirectoryAction"/>
+      <action id="Cvs.UndoAdd" class="com.intellij.cvsSupport2.actions.UnmarkAddedAction"/>
+      <reference id="Cvs.Ignore"/>
+
+      <separator/>
+      <reference id="Compare.SameVersion"/>
+      <reference id="Compare.LastVersion"/>
+      <reference id="Compare.Selected"/>
+      <reference id="Compare.Specified"/>
+
+      <reference id="Vcs.ShowTabbedFileHistory"/>
+      <reference id="Vcs.ShowHistoryForBlock"/>
+      <reference id="Annotate"/>
+
+      <separator/>
+      <action id="Cvs.CreateBranch" class="com.intellij.cvsSupport2.actions.BranchAction"/>
+      <action id="Cvs.CreateTag" class="com.intellij.cvsSupport2.actions.CreateTagAction"/>
+      <action id="Cvs.DeleteTag" class="com.intellij.cvsSupport2.actions.DeleteTagAction"/>
+      <separator/>
+      <group id="EditAndWatch" popup="true">
+        <action id="Cvs.Edit" class="com.intellij.cvsSupport2.actions.EditAction"/>
+        <action id="Cvs.Unedit" class="com.intellij.cvsSupport2.actions.UneditAction"/>
+        <action id="Cvs.Editors" class="com.intellij.cvsSupport2.actions.ViewEditorsAction"/>
+        <separator/>
+        <action id="Cvs.WatchOn" class="com.intellij.cvsSupport2.actions.WatchOnAction"/>
+        <action id="Cvs.WatchOff" class="com.intellij.cvsSupport2.actions.WatchOffAction"/>
+        <action id="Cvs.WatchAdd" class="com.intellij.cvsSupport2.actions.WatchAddAction"/>
+        <action id="Cvs.WatchRemove" class="com.intellij.cvsSupport2.actions.WatchRemoveAction"/>
+        <action id="Cvs.Watchers" class="com.intellij.cvsSupport2.actions.ViewWatchersAction"/>
+      </group>
+      <separator/>
+      <action id="Cvs.ToggleOffline" class="com.intellij.cvsSupport2.actions.ToggleOfflineAction"/>
+      <add-to-group group-id="UpdateActionGroup" anchor="last"/>
+
+      <separator/>
+
+      <reference id="ChangesView.Browse"/>
+
+      <add-to-group group-id="CvsFilePopupGroup" anchor="last"/>
+      <add-to-group group-id="CvsGlobalGroup" anchor="last"/>
+    </group>
+  </actions>
+
+</idea-plugin>
