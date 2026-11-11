@@ -109,13 +109,30 @@ kotlin {
     jvmToolchain(25)
 }
 
+// The plugin's own descriptor entries (actions, extensions) live in a fragment that is merged into OpenCVS's
+// descriptor here instead of being packaged on its own (tag-committed-changeset design decision 17).
+val descriptorAdditions = layout.projectDirectory.file("src/main/resources/META-INF/intellijcvs-additions.xml")
+
 // The vendor block can set the vendor's name but cannot drop the email and url of OpenCVS's vendor element, so
 // they are removed from the patched descriptor; the upstream file stays untouched (design decision 8).
 tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PatchPluginXmlTask>("patchPluginXml") {
+    inputs.file(descriptorAdditions)
     doLast {
         val descriptor = outputFile.get().asFile
-        descriptor.writeText(descriptor.readText().replace(Regex("""<vendor\b[^>]*>"""), "<vendor>"))
+        val additions = descriptorAdditions.asFile.readText()
+            .replace(Regex("""<!--.*?-->""", RegexOption.DOT_MATCHES_ALL), "")
+            .let { Regex("""<idea-plugin>(.*)</idea-plugin>""", RegexOption.DOT_MATCHES_ALL).find(it) }
+            ?.groupValues?.get(1)
+            ?: throw GradleException("no <idea-plugin> element in $descriptorAdditions")
+        val patched = descriptor.readText().replace(Regex("""<vendor\b[^>]*>"""), "<vendor>")
+        val end = patched.lastIndexOf("</idea-plugin>")
+        if (end < 0) throw GradleException("no </idea-plugin> in $descriptor")
+        descriptor.writeText(patched.substring(0, end) + additions.trim('\n') + "\n" + patched.substring(end))
     }
+}
+
+tasks.processResources {
+    exclude("META-INF/intellijcvs-additions.xml")
 }
 
 // Apache 2.0 section 4 and the Sun Public License attach to the distributed binary: the notice and every
