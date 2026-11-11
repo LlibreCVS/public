@@ -198,6 +198,12 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
             .map { Revision(it.revisionNumber.asString(), it.author.orEmpty(), it.commitMessage.orEmpty().trimEnd()) }
     }
 
+    /** One line as annotate shows it. */
+    data class AnnotatedLine(val revision: String, val author: String, val text: String)
+
+    /** [file] annotated through the CVS annotation provider, line by line. */
+    fun annotate(project: Project, file: Path): List<AnnotatedLine> = throw NotImplementedError()
+
     /** Updates the working copy [root] through the plugin's update environment and fails on any CVS error. */
     fun update(project: Project, root: Path) {
         val session = CvsUpdateEnvironment(project).updateDirectories(
