@@ -1,5 +1,6 @@
 package by.devlab
 
+import by.devlab.vcs.FakeWorkingCopy
 import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.extensions.PluginDescriptor
 import com.intellij.openapi.extensions.PluginId
@@ -81,9 +82,9 @@ class VcsRegistrationTest {
     private fun mapOneOfTwoDirectoriesToCvs(): Pair<VirtualFile, VirtualFile> {
         module.get()
         val content = contentPath.get()
-        val mapped = Files.createDirectories(content.resolve("mapped"))
-        Files.createDirectories(mapped.resolve("CVS"))
-        Files.writeString(mapped.resolve("CVS/Root"), ":pserver:anonymous@cvs.example.org:/cvsroot\n")
+        val mapped = FakeWorkingCopy.write(
+            Files.createDirectories(content.resolve("mapped")), ":pserver:anonymous@cvs.example.org:/cvsroot",
+        )
         Files.writeString(mapped.resolve("Main.txt"), "mapped\n")
         val sibling = Files.createDirectories(content.resolve("sibling"))
         Files.writeString(sibling.resolve("Other.txt"), "sibling\n")

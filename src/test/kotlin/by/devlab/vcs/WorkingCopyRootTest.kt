@@ -1,6 +1,6 @@
 package by.devlab.vcs
 
-import com.intellij.openapi.application.ApplicationManager
+import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration
 import com.intellij.openapi.vcs.VcsRootChecker
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.junit5.TestApplication
@@ -194,15 +194,13 @@ class WorkingCopyRootTest {
 
     /** Runs [block] with the plugin's CVS encoding setting set to [encoding], then restores the setting. */
     private fun withCvsEncoding(encoding: String, block: () -> Unit) {
-        val configurationClass = Class.forName("com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration")
-        val configuration = ApplicationManager.getApplication().getService(configurationClass)
-        val field = configurationClass.getField("ENCODING")
-        val previous = field.get(configuration)
-        field.set(configuration, encoding)
+        val configuration = CvsApplicationLevelConfiguration.getInstance()
+        val previous = configuration.ENCODING
+        configuration.ENCODING = encoding
         try {
             block()
         } finally {
-            field.set(configuration, previous)
+            configuration.ENCODING = previous
         }
     }
 }
