@@ -8,6 +8,29 @@ plugins {
 group = "by.devlab"
 version = "0.1.0"
 
+// OpenCVS (git subtree, see README.md) is compiled by this build, as its own build does: the Java sources, the
+// resource bundles that sit next to them, and its bundled SSH library. Upstream's build script is not used.
+val upstream = "upstream/opencvs"
+
+sourceSets {
+    main {
+        java.srcDirs(
+            "$upstream/cvs-core/src",
+            "$upstream/cvs-plugin/src",
+            "$upstream/javacvs-src",
+            "$upstream/smartcvs-src",
+        )
+        resources.srcDirs(
+            "$upstream/cvs-core/resources",
+            "$upstream/cvs-plugin/resources",
+            "$upstream/javacvs-src",
+            "$upstream/smartcvs-src",
+        )
+        // The source trees double as resource dirs; only their non-Java files belong in the jar.
+        resources.exclude("**/*.java")
+    }
+}
+
 repositories {
     mavenCentral()
     intellijPlatform {
@@ -16,6 +39,8 @@ repositories {
 }
 
 dependencies {
+    implementation(files("$upstream/lib/trilead-ssh2-build213.jar"))
+
     intellijPlatform {
         // IntelliJ IDEA downloaded by version, so the build does not depend on the installed IDE.
         intellijIdea("2026.2.3")
@@ -26,8 +51,10 @@ dependencies {
         // TestProjectManager, which test-framework-junit5 does not bring.
         testFramework(TestFrameworkType.Platform)
         testFramework(TestFrameworkType.JUnit5)
-        // VcsRootErrorsFinder lives in this product module, which is not on the test compile classpath by itself.
-        testBundledModule("intellij.platform.vcs.impl")
+        // Declared as OpenCVS's own build does; vcs.impl also brings VcsRootErrorsFinder to the tests.
+        bundledModule("intellij.platform.vcs.impl")
+        bundledModule("intellij.platform.vcs.impl.lang")
+        bundledLibrary("lib/intellij.libraries.microba.jar")
     }
 
     testImplementation(platform("org.junit:junit-bom:5.14.4"))
@@ -40,6 +67,12 @@ dependencies {
 
 intellijPlatform {
     pluginConfiguration {
+        // The descriptor is OpenCVS's plugin.xml; the build gives it this plugin's identity.
+        id = "intellijcvs"
+        name = "IntelliJCVS"
+        vendor {
+            name = "Home Laboratory"
+        }
         // Explicit, so that a change of the plugin's defaults cannot add an upper bound.
         ideaVersion {
             sinceBuild = "262"
@@ -57,6 +90,12 @@ intellijPlatform {
 
 kotlin {
     jvmToolchain(25)
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+    // Upstream code is compiled as published; its lint warnings are upstream's business.
+    options.compilerArgs.add("-Xlint:none")
 }
 
 tasks.test {
