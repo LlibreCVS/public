@@ -204,6 +204,26 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         }
     }
 
+    /** Deletes [file] from the working copy, schedules its removal through the plugin and commits it. */
+    fun removeAndCommit(project: Project, file: Path, message: String) {
+        Files.delete(file)
+        virtualFile(file.parent)
+        run(CommandCvsHandler.createRemoveFilesHandler(project, listOf(file.toFile())), project)
+        val change = Change(CurrentContentRevision(VcsUtil.getFilePath(file.toFile(), false)), null)
+        val errors = CvsCheckinEnvironment(project).commit(listOf(change), message, CommitContext(), mutableSetOf())
+        errors?.firstOrNull()?.let { throw it }
+    }
+
+    /**
+     * The revision the tag [tag] points to in the repository file [path] (`module/file.txt`), read from the RCS file
+     * with the fixture's own `cvs rlog -h`, or null when the file does not carry the tag.
+     */
+    fun tagOf(path: String, tag: String): String? {
+        val log = server.cvs("rlog", "-h", path)
+        val names = log.lines().dropWhile { !it.startsWith("symbolic names:") }.drop(1).takeWhile { it.startsWith("\t") }
+        return names.map { it.trim().split(": ") }.firstOrNull { it[0] == tag }?.get(1)
+    }
+
     /** The keyword substitution CVS/Entries records for [file] (e.g. `-kb`), or "" for the default. */
     fun keywordSubstitution(file: Path, charset: Charset = Charsets.UTF_8): String = entry(file, charset).split('/')[4]
 

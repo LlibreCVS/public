@@ -43,10 +43,12 @@ object TestData {
     /**
      * Edits a checked-out file. CVS tells an edit by a modification time that differs from the one in CVS/Entries,
      * to the second; a test edits within the second of its checkout, so the time is moved past it, as it would be
-     * for a person editing the file later.
+     * for a person editing the file later. A file edited again in the same second was itself moved ahead by an
+     * earlier edit, so the time is moved past that one too.
      */
     fun edit(file: Path, bytes: ByteArray) {
+        val previous = if (Files.exists(file)) Files.getLastModifiedTime(file).toInstant() else Instant.EPOCH
         write(file, bytes)
-        Files.setLastModifiedTime(file, FileTime.from(Instant.now().plusSeconds(5)))
+        Files.setLastModifiedTime(file, FileTime.from(maxOf(Instant.now(), previous).plusSeconds(5)))
     }
 }

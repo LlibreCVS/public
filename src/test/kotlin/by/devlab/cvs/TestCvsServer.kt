@@ -85,6 +85,22 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
     /** A file of the repository, e.g. an RCS file `module/file.txt,v`, for inspection by the tests. */
     fun repositoryFile(relative: String): Path = repository.resolve(relative)
 
+    /**
+     * Runs the fixture's `cvs` directly on the repository (no server, no plugin) with [arguments], e.g.
+     * `rlog -h module/file.txt`, to inspect or prepare the repository; returns its output, decoded as UTF-8.
+     */
+    fun cvs(vararg arguments: String): String {
+        val process = ProcessBuilder(listOf(CvsLocator.locate().toString(), "-f", "-d", repositoryPath) + arguments)
+            .redirectErrorStream(true)
+            .apply { configure(environment(), work.resolve("home")) }
+            .start()
+        val output = process.inputStream.readBytes().decodeToString()
+        check(process.waitFor(60, TimeUnit.SECONDS) && process.exitValue() == 0) {
+            "cvs ${arguments.joinToString(" ")} failed: $output"
+        }
+        return output
+    }
+
     /** The CVSROOT through which [user] reaches this server. */
     fun cvsRoot(user: String): String = ":pserver:$user@127.0.0.1:$port$repositoryPath"
 
