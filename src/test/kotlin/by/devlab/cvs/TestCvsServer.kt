@@ -61,6 +61,9 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
     private val processes = CopyOnWriteArrayList<ProcessHandle>()
     private val connectionCount = AtomicInteger()
 
+    /** The directory of this server under [WORK_ROOT]: repository, temp files, logs. */
+    val workDirectory: Path get() = work
+
     /** The port the server listens on. */
     val port: Int get() = listener.localPort
 
@@ -128,8 +131,7 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
                     val read = from.read(buffer)
                     if (read < 0) break
                     to.write(buffer, 0, read)
-                    to.flush()
-                }
+                    to.flush()                }
             } catch (_: IOException) {
                 // The other side went away; closing below ends the connection.
             } finally {
@@ -179,5 +181,11 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
             environment.keys.removeIf { it.startsWith("CVS") }
             environment["HOME"] = home.absolutePathString()
         }
+
+        /** The responses a client announces in `Valid-responses`, as the cvs 1.11 server expects them. */
+        const val VALID_RESPONSES = "ok error Valid-requests Checked-in New-entry Checksum Copy-file Updated Created " +
+            "Update-existing Merged Patched Rcs-diff Mode Mod-time Removed Remove-entry Set-static-directory " +
+            "Clear-static-directory Set-sticky Clear-sticky Template Notified Module-expansion Wrapper-rcsOption M " +
+            "Mbinary E F MT"
     }
 }

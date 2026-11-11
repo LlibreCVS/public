@@ -71,6 +71,29 @@ class TestServerTest {
         }
     }
 
+    // Found while proving checkout: on a fresh msys server the first command that creates a directory in the
+    // server's temp directory fails with "Permission denied"; every later one works.
+    @Test
+    @DisplayName("First command on a fresh server succeeds")
+    fun firstCommandOnAFreshServerSucceeds() {
+        TestCvsServer().use { server ->
+            server.start()
+            Socket(InetAddress.getLoopbackAddress(), server.port).use { socket ->
+                sendAuthRequest(socket, server, "alice")
+                val repository = server.repositoryPath
+                val command = "Root $repository\nValid-responses ${TestCvsServer.VALID_RESPONSES}\n" +
+                    "Directory .\n$repository\nDirectory first\n$repository/first\nnoop\n"
+                socket.getOutputStream().apply { write(command.toByteArray(Charsets.US_ASCII)); flush() }
+                socket.shutdownOutput()
+                socket.soTimeout = 30_000
+
+                val answer = socket.getInputStream().readAllBytes().decodeToString()
+
+                assertEquals(listOf("I LOVE YOU", "ok"), answer.lines().filter { it.isNotEmpty() }, answer)
+            }
+        }
+    }
+
     private fun authenticate(socket: Socket, server: TestCvsServer, user: String): String {
         sendAuthRequest(socket, server, user)
         socket.soTimeout = 30_000
