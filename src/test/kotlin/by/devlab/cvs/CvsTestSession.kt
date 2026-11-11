@@ -118,8 +118,9 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         run(CommandCvsHandler.createImportHandler(details))
     }
 
-    /** Checks [module] out as [user] into [target] and returns the module's working copy. */
-    fun checkout(user: String, module: String, target: Path): Path {
+    /** Checks [module] out as [user] into [target] (at [tag], if given) and returns the module's working copy. */
+    fun checkout(user: String, module: String, target: Path, tag: String? = null): Path {
+        if (tag != null) throw NotImplementedError()
         run(CommandCvsHandler.createCheckoutHandler(environment(user), arrayOf(module), target.toFile(), false, false, null))
         return target.resolve(module)
     }
@@ -164,6 +165,12 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         val errors = CvsCheckinEnvironment(project).commit(changes, message, CommitContext(), mutableSetOf())
         errors?.firstOrNull()?.let { throw it }
     }
+
+    /** Commits [files] with the commit dialog's tag-after-commit option set to [tag]. */
+    fun commitWithTag(project: Project, files: List<Path>, message: String, tag: String): Unit = throw NotImplementedError()
+
+    /** The keyword substitution CVS/Entries records for [file] (e.g. `-kb`), or "" for the default. */
+    fun keywordSubstitution(file: Path, charset: Charset = Charsets.UTF_8): String = throw NotImplementedError()
 
     /** Updates the working copy [root] through the plugin's update environment and fails on any CVS error. */
     fun update(project: Project, root: Path) {

@@ -81,6 +81,9 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
     /** The repository path as clients name it: the msys form the server was allowed (design decision 8). */
     val repositoryPath: String get() = msysPath(repository)
 
+    /** A file of the repository, e.g. an RCS file `module/file.txt,v`, for inspection by the tests. */
+    fun repositoryFile(relative: String): Path = throw NotImplementedError()
+
     /** The CVSROOT through which [user] reaches this server. */
     fun cvsRoot(user: String): String = ":pserver:$user@127.0.0.1:$port$repositoryPath"
 
