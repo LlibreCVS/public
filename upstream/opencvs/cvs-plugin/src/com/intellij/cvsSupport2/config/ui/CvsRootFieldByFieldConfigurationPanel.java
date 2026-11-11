@@ -41,6 +41,7 @@ public class CvsRootFieldByFieldConfigurationPanel {
   public void updateFrom(CvsRootData config) {
     myMethods.removeAllItems();
     for (CvsMethod method : CvsMethod.AVAILABLE_METHODS) {
+      if (method == CvsMethod.LOCAL_METHOD) continue; // IntelliJCVS upstream-patch: local connections are not supported
       myMethods.addItem(method);
     }
 
