@@ -2,7 +2,7 @@ package by.devlab
 
 import by.devlab.vcs.FakeWorkingCopy
 import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.openapi.extensions.PluginDescriptor
+import com.intellij.ide.plugins.IdeaPluginDescriptor
 import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.vcs.ProjectLevelVcsManager
 import com.intellij.openapi.vcs.VcsDirectoryMapping
@@ -13,7 +13,9 @@ import com.intellij.testFramework.junit5.fixture.moduleFixture
 import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
@@ -38,6 +40,12 @@ class VcsRegistrationTest {
         assertEquals("intellijcvs", plugin.pluginId.idString)
         assertEquals("IntelliJCVS", plugin.name)
         assertEquals("Home Laboratory", plugin.vendor)
+        // The descriptor is OpenCVS's: nothing of upstream's identity may survive the build's patching.
+        assertTrue(plugin.vendorEmail.isNullOrEmpty(), "vendor email: ${plugin.vendorEmail}")
+        assertTrue(plugin.vendorUrl.isNullOrEmpty(), "vendor url: ${plugin.vendorUrl}")
+        val description = plugin.description.orEmpty()
+        assertFalse(description.contains("OpenCVS"), description)
+        assertFalse(description.contains("jieyuexing"), description)
     }
 
     @Test
@@ -98,7 +106,7 @@ class VcsRegistrationTest {
     private fun refreshed(path: Path): VirtualFile =
         checkNotNull(LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path)) { "no VFS file for $path" }
 
-    private fun loadedPlugin(): PluginDescriptor {
+    private fun loadedPlugin(): IdeaPluginDescriptor {
         val id = PluginId.getId("intellijcvs")
         // getPlugin also returns installed plugins that are disabled; isLoaded proves the IDE loaded it.
         check(PluginManagerCore.isLoaded(id)) { "the IDE did not load plugin intellijcvs" }

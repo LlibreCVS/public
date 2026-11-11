@@ -100,4 +100,8 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.test {
     useJUnitPlatform()
+    // PackagingTest inspects the plugin jar that goes into the distribution.
+    val pluginJar = tasks.named<org.jetbrains.intellij.platform.gradle.tasks.ComposedJarTask>("composedJar").flatMap { it.archiveFile }
+    inputs.file(pluginJar)
+    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dintellijcvs.jar=${pluginJar.get().asFile}") })
 }
