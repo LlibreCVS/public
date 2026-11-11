@@ -53,10 +53,33 @@ class PackagingTest {
         }
     }
 
+    @Test
+    @DisplayName("Action sits in the Repository toolbar and menu")
+    fun actionSitsInTheRepositoryToolbarAndMenu() {
+        val descriptor = jarEntry("META-INF/plugin.xml")
+        val action = Regex("""<action\b[^>]*\bid="IntelliJCVS\.PutOnTag"[^>]*>(.*?)</action>""", RegexOption.DOT_MATCHES_ALL)
+            .find(descriptor)
+        checkNotNull(action) { "no action IntelliJCVS.PutOnTag in the packaged descriptor" }
+        assertTrue("""text="Put on Tag..."""" in action.value, "action text")
+        assertTrue("""<add-to-group group-id="CommittedChangesToolbar"""" in action.groupValues[1], "toolbar group")
+        assertTrue("""<add-to-group group-id="ChangesViewPopupMenu"""" in action.groupValues[1], "menu group")
+        assertTrue(Regex("""<notificationGroup\b[^>]*\bid="IntelliJCVS"""").containsMatchIn(descriptor), "notification group")
+    }
+
+    /** The text of [name] in the plugin jar. */
+    private fun jarEntry(name: String): String =
+        ZipFile(pluginJar().toFile()).use { zip ->
+            zip.getInputStream(checkNotNull(zip.getEntry(name)) { "no $name in the jar" }).readBytes().toString(Charsets.UTF_8)
+        }
+
     /** Entry names of the plugin jar that the build passes in system property `intellijcvs.jar`. */
-    private fun jarEntries(): Set<String> {
+    private fun jarEntries(): Set<String> =
+        ZipFile(pluginJar().toFile()).use { zip -> zip.entries().asSequence().map { it.name }.toSet() }
+
+    /** The plugin jar that the build passes in system property `intellijcvs.jar`. */
+    private fun pluginJar(): Path {
         val jar = Path.of(checkNotNull(System.getProperty("intellijcvs.jar")) { "intellijcvs.jar is not set" })
         check(Files.isRegularFile(jar)) { "no plugin jar at $jar" }
-        return ZipFile(jar.toFile()).use { zip -> zip.entries().asSequence().map { it.name }.toSet() }
+        return jar
     }
 }
