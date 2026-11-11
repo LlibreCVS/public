@@ -59,6 +59,7 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
 
     override fun afterEach(context: ExtensionContext) {
         CvsApplicationLevelConfiguration.getInstance().ENCODING = previousEncoding
+        server.clientCharset = Charsets.UTF_8
     }
 
     override fun afterAll(context: ExtensionContext) {
@@ -73,9 +74,10 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         assertEquals(realPasswordFileBefore, realPasswordFileFingerprint(), "the real ~/.cvspass changed")
     }
 
-    /** Sets the plugin's CVS encoding for the rest of the current test. */
+    /** Sets the plugin's CVS encoding for the rest of the current test, and tells the server about it. */
     fun useEncoding(charset: Charset) {
         CvsApplicationLevelConfiguration.getInstance().ENCODING = charset.name()
+        server.clientCharset = charset
     }
 
     /** A new empty directory under the server's work directory. */

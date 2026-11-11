@@ -4,6 +4,7 @@ import org.junit.jupiter.api.extension.AfterAllCallback
 import org.junit.jupiter.api.extension.BeforeAllCallback
 import org.junit.jupiter.api.extension.ExtensionContext
 import org.netbeans.lib.cvsclient.connection.PServerPasswordScrambler
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -11,6 +12,7 @@ import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
@@ -61,6 +63,13 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
     private val connections = CopyOnWriteArrayList<Socket>()
     private val processes = CopyOnWriteArrayList<ProcessHandle>()
     private val connectionCount = AtomicInteger()
+
+    /**
+     * The encoding the plugin talks in; connections opened while it is not UTF-8 are transcoded to UTF-8 for the
+     * msys server, which cannot store other file-name bytes (design decision 18).
+     */
+    @Volatile
+    var clientCharset: Charset = Charsets.UTF_8
 
     /** The directory of this server under [WORK_ROOT]: repository, temp files, logs. */
     val workDirectory: Path get() = work
@@ -138,20 +147,33 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
             .apply { configure(environment(), home) }
             .start()
         processes.add(process.toHandle())
-        pump("in", socket.getInputStream(), process.outputStream) { process.outputStream.close() }
-        pump("out", process.inputStream, socket.getOutputStream()) { socket.close() }
+        // The client's encoding when the connection opens decides how its lines are converted (decision 18).
+        val charset = clientCharset
+        val transcode = charset != Charsets.UTF_8
+        val requests = if (transcode) CvsProtocolTranscoder.requests(charset, Charsets.UTF_8) else null
+        val responses = if (transcode) CvsProtocolTranscoder.responses(Charsets.UTF_8, charset) else null
+        pump("in", socket.getInputStream(), process.outputStream, requests) { process.outputStream.close() }
+        pump("out", process.inputStream, socket.getOutputStream(), responses) { socket.close() }
     }
 
-    /** Copies [from] to [to] on a daemon thread until either side ends, then runs [done]. */
-    private fun pump(name: String, from: InputStream, to: OutputStream, done: () -> Unit) {
+    /**
+     * Copies [from] to [to] on a daemon thread until either side ends, then runs [done]; with a [transcoder] the
+     * text lines are re-encoded on the way.
+     */
+    private fun pump(name: String, from: InputStream, to: OutputStream, transcoder: CvsProtocolTranscoder?, done: () -> Unit) {
         Thread({
             try {
-                val buffer = ByteArray(8192)
-                while (true) {
-                    val read = from.read(buffer)
-                    if (read < 0) break
-                    to.write(buffer, 0, read)
-                    to.flush()                }
+                if (transcoder != null) {
+                    transcoder.copy(BufferedInputStream(from), to)
+                } else {
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val read = from.read(buffer)
+                        if (read < 0) break
+                        to.write(buffer, 0, read)
+                        to.flush()
+                    }
+                }
             } catch (_: IOException) {
                 // The other side went away; closing below ends the connection.
             } finally {
