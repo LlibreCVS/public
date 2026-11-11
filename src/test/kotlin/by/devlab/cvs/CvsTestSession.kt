@@ -60,14 +60,19 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
 
     private var previousPasswordFile: String? = null
     private var previousEncoding: String = CvsApplicationLevelConfiguration.DEFAULT
+    private var previousGzip = false
     private var realPasswordFileBefore: String? = null
 
     override fun beforeAll(context: ExtensionContext) {
         realPasswordFileBefore = realPasswordFileFingerprint()
-        server.start()
+        // Captured before the server starts, so that a failed start restores exactly what was there.
         val configuration = CvsApplicationLevelConfiguration.getInstance()
         previousPasswordFile = configuration.PATH_TO_PASSWORD_FILE
         previousEncoding = configuration.ENCODING
+        previousGzip = configuration.USE_GZIP
+        // The fixture's transcoder reads the protocol line by line; a gzip stream would hide the lines.
+        configuration.USE_GZIP = false
+        server.start()
         val passwordFile = server.workDirectory.resolve("cvspass")
         val scrambled = PServerPasswordScrambler.getInstance().scramble(TestCvsServer.PASSWORD)
         Files.writeString(passwordFile, TestCvsServer.USERS.joinToString("") { "${server.cvsRoot(it)} $scrambled\n" })
@@ -84,6 +89,7 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
             CvsApplicationLevelConfiguration.getInstance().apply {
                 PATH_TO_PASSWORD_FILE = previousPasswordFile
                 ENCODING = previousEncoding
+                USE_GZIP = previousGzip
             }
         } finally {
             server.close()
@@ -91,7 +97,10 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         assertEquals(realPasswordFileBefore, realPasswordFileFingerprint(), "the real ~/.cvspass changed")
     }
 
-    /** Sets the plugin's CVS encoding for the rest of the current test, and tells the server about it. */
+    /**
+     * Sets the plugin's CVS encoding for the rest of the current test, and tells the server about it. Call it before
+     * the test's first CVS operation: the server picks a connection's conversion when the connection opens.
+     */
     fun useEncoding(charset: Charset) {
         CvsApplicationLevelConfiguration.getInstance().ENCODING = charset.name()
         server.clientCharset = charset
@@ -117,6 +126,8 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
             IIgnoreFileFilter { _, _ -> false },
         )
         run(CommandCvsHandler.createImportHandler(details))
+        // The plugin reports a server-side import failure only as a message; fail here, not at a later assertion.
+        check(Files.isDirectory(server.repositoryFile(module))) { "the import of $module created nothing on the server" }
     }
 
     /** Checks [module] out as [user] into [target] (at [tag], if given) and returns the module's working copy. */
@@ -129,19 +140,25 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         return target.resolve(module)
     }
 
-    /** Runs [handler] the way the plugin's actions do and fails with the first CVS error, if any. */
+    /**
+     * Runs [handler] the way the plugin's actions do and fails with the first CVS error, if any, also one the plugin
+     * reports only as an error message.
+     */
     fun run(handler: CvsHandler, project: Project? = null) {
+        val errors = mutableListOf<String>()
         // The CVS transcript goes to the test's standard output, so that a failure can be read in the test report.
         handler.addCvsListener(CvsMessagesListener.STANDARD_OUTPUT)
         handler.addCvsListener(object : CvsMessagesAdapter() {
             override fun addError(message: String, path: String?, fs: ICvsFileSystem?, root: String?, warning: Boolean) {
                 println("${if (warning) "warning" else "error"}: $message ${path.orEmpty()}")
+                if (!warning) errors += "$message ${path.orEmpty()}".trim()
             }
         })
         val executor = CvsOperationExecutor(false, project, ModalityState.nonModal())
         executor.setShowErrors(false)
         executor.performActionSync(handler, CvsOperationExecutorCallback.EMPTY)
         if (!executor.hasNoErrors()) throw executor.firstError
+        if (errors.isNotEmpty()) throw AssertionError("CVS reported errors: $errors")
     }
 
     /** Maps [roots] (working copies) to CVS in [project], next to the mappings it already has. */

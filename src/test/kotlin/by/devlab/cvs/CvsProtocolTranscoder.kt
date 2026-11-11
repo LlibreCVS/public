@@ -20,6 +20,7 @@ class CvsProtocolTranscoder private constructor(
     private val from: Charset,
     private val to: Charset,
     private val payloadAfter: Map<String, Int>,
+    private val passInvalidLines: Boolean,
 ) {
     /** Copies [input] to [output] until [input] ends, flushing after every line and every file content. */
     fun copy(input: InputStream, output: OutputStream) {
@@ -52,11 +53,14 @@ class CvsProtocolTranscoder private constructor(
     }
 
     /**
-     * Re-encodes [line] from [from] to [to]. A line that is not valid in [from] is passed unchanged: it carries file
-     * text (annotate lines), which the server stores as the client's bytes and so is already in [to].
+     * Re-encodes [line] from [from] to [to]. In responses a line that is not valid in [from] is passed unchanged: it
+     * carries file text (annotate lines), which the server stores as the client's bytes and so is already in [to].
+     * Requests are always converted, invalid bytes becoming replacement characters, so that a client that does not
+     * talk [from] leaves visibly wrong names on the server instead of slipping through.
      */
     private fun convert(line: ByteArray): ByteArray {
         if (line.all { it >= 0 }) return line
+        if (!passInvalidLines) return String(line, from).toByteArray(to)
         val text = try {
             from.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
@@ -88,7 +92,7 @@ class CvsProtocolTranscoder private constructor(
 
     companion object {
         /** Client to server: `Modified name`, mode, size, content. */
-        fun requests(from: Charset, to: Charset) = CvsProtocolTranscoder(from, to, mapOf("Modified" to 2))
+        fun requests(from: Charset, to: Charset) = CvsProtocolTranscoder(from, to, mapOf("Modified" to 2), passInvalidLines = false)
 
         /**
          * Server to client: the file-carrying responses (`Updated dir/`, repository path, entry, mode, size,
@@ -98,6 +102,7 @@ class CvsProtocolTranscoder private constructor(
             from, to,
             listOf("Updated", "Created", "Update-existing", "Merged", "Patched", "Rcs-diff").associateWith { 4 } +
                 mapOf("Mbinary" to 1, "Template" to 2),
+            passInvalidLines = true,
         )
     }
 }

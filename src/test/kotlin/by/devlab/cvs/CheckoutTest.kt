@@ -76,6 +76,13 @@ class CheckoutTest {
         val workingCopy = session.checkout("alice", module, session.newDirectory("$module-wc"))
 
         assertEquals(names(source), names(workingCopy))
+        // The fixture converts names symmetrically, so the round trip alone would not notice a plugin that ignored
+        // its encoding setting: the names must also arrive on the server as the right text, and CVS/Entries must
+        // be written in the configured encoding.
+        for (file in TestData.TEXTS + TestData.BINARY) {
+            assertTrue(Files.isRegularFile(session.server.repositoryFile("$module/$file,v")), "$file on the server")
+        }
+        assertEquals("1.1.1.1", session.revision(workingCopy.resolve(TestData.CYRILLIC_TEXT), charset))
         for (text in TestData.TEXTS) {
             assertEquals(
                 TestData.text(source.resolve(text), charset),

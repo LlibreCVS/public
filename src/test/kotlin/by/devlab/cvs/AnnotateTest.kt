@@ -57,6 +57,7 @@ class AnnotateTest {
 
         assertEquals(after, lines.map { it.text })
         assertEquals(listOf("1.1", "1.2", "1.2", "1.1"), lines.map { it.revision })
+        assertEquals(listOf("alice", "bob", "bob", "alice"), lines.map { it.author })
     }
 
     /**

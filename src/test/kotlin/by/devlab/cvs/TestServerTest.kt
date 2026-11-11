@@ -54,6 +54,28 @@ class TestServerTest {
         assertThrows<ConnectException> { Socket(InetAddress.getLoopbackAddress(), server.port).close() }
     }
 
+    // The scenario's "whether they passed or failed": a failing test leaves its connection open.
+    @Test
+    @DisplayName("Server processes end with the tests (connection still open)")
+    fun serverProcessesEndWithTheTestsWhileAConnectionIsOpen() {
+        val server = TestCvsServer()
+        server.start()
+        val socket = Socket(InetAddress.getLoopbackAddress(), server.port)
+        try {
+            assertEquals("I LOVE YOU", authenticate(socket, server, "alice"))
+            val session = "Root ${server.repositoryPath}\nValid-responses ${TestCvsServer.VALID_RESPONSES}\nvalid-requests\n"
+            socket.getOutputStream().apply { write(session.toByteArray(Charsets.US_ASCII)); flush() }
+
+            server.close()
+
+            val processes = server.startedProcesses()
+            assertTrue(processes.isNotEmpty(), "the connection started no server process")
+            assertEquals(emptyList<ProcessHandle>(), processes.filter { it.isAlive })
+        } finally {
+            socket.close()
+        }
+    }
+
     @Test
     @DisplayName("Two connections are served at once")
     fun twoConnectionsAreServedAtOnce() {
@@ -75,8 +97,8 @@ class TestServerTest {
         }
     }
 
-    // Found while proving checkout: on a fresh msys server the first command that creates a directory in the
-    // server's temp directory fails with "Permission denied"; every later one works.
+    // Found while proving checkout: with the server's temp directory inside the user profile, commands that create
+    // directories there failed with "Permission denied", most often the first one (design decision 19).
     @Test
     @DisplayName("First command on a fresh server succeeds")
     fun firstCommandOnAFreshServerSucceeds() {

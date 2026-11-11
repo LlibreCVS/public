@@ -4,10 +4,12 @@ import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.RegisterExtension
 import java.nio.charset.Charset
+import java.nio.file.Files
 import java.nio.file.Path
 
 /**
@@ -68,6 +70,9 @@ class UpdateTest {
         session.update(project.get(), a)
 
         assertEquals("текст приказа\n", TestData.text(a.resolve("Новая папка/Приказ №1.txt"), WINDOWS_1251))
+        // The round trip alone would hide a plugin that ignored its encoding (see CheckoutTest).
+        assertTrue(Files.isRegularFile(session.server.repositoryFile("update-added-cp1251/Новая папка/Приказ №1.txt,v")))
+        assertEquals("1.1", session.revision(a.resolve("Новая папка/Приказ №1.txt"), WINDOWS_1251))
     }
 
     @Test

@@ -63,6 +63,7 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
     private lateinit var listener: ServerSocket
     private val connections = CopyOnWriteArrayList<Socket>()
     private val processes = CopyOnWriteArrayList<ProcessHandle>()
+    private val descendants = CopyOnWriteArrayList<ProcessHandle>()
     private val connectionCount = AtomicInteger()
 
     /**
@@ -167,20 +168,28 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
         }, "cvs-test-server-$port-$name").apply { isDaemon = true }.start()
     }
 
-    /** Every process this server started, with the descendants that are visible now. */
-    fun startedProcesses(): List<ProcessHandle> =
-        (processes + processes.flatMap { it.descendants().toList() }).distinct()
+    /**
+     * Every process this server started, with every descendant seen so far: descendants are collected on each
+     * call, so a child that has exited, or whose parent has exited, stays on the list.
+     */
+    fun startedProcesses(): List<ProcessHandle> {
+        processes.toList().forEach { process -> process.descendants().forEach { descendants.addIfAbsent(it) } }
+        return (processes + descendants).distinct()
+    }
 
+    /**
+     * Stops the listener, then the connections, waits for the processes and destroys whatever still runs, with the
+     * descendants collected again after the wait (a child forked while the connections closed is caught too).
+     */
     override fun close() {
         if (!::listener.isInitialized) return
         listener.close()
-        val all = startedProcesses()
+        startedProcesses()
         connections.forEach { runCatching { it.close() } }
-        all.forEach { process ->
-            runCatching { process.onExit().get(5, TimeUnit.SECONDS) }
-        }
-        all.filter { it.isAlive }.forEach { it.destroyForcibly() }
-        all.forEach { process -> runCatching { process.onExit().get(5, TimeUnit.SECONDS) } }
+        startedProcesses().forEach { process -> runCatching { process.onExit().get(5, TimeUnit.SECONDS) } }
+        val remaining = startedProcesses().filter { it.isAlive }
+        remaining.forEach { it.destroyForcibly() }
+        remaining.forEach { process -> runCatching { process.onExit().get(5, TimeUnit.SECONDS) } }
         runCatching { temp.toFile().deleteRecursively() }
     }
 
