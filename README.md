@@ -37,6 +37,7 @@ starts with `upstream-patch:`, and each edited place is marked with an `IntelliJ
 | `upstream-patch: match tracked directory names in the usual CVS encodings` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/common/FindAllRootsHelper.java` | Cyrillic directory names stored in UTF-8 or windows-1251 stay part of their parent's root |
 | `upstream-patch: accept mappings on any CVS working-copy directory` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/common/CvsRootChecker.java` | the IDE does not report a mapping of a tracked subdirectory as invalid |
 | `upstream-patch: reject local CVS repositories instead of running cvs` | `cvs-plugin/src/com/intellij/cvsSupport2/connections/IDEARootFormatter.java`, `cvs-plugin/src/com/intellij/cvsSupport2/config/ui/CvsRootFieldByFieldConfigurationPanel.java` | a local connection would launch a `cvs` executable |
+| `upstream-patch: expose a committed changeset's environment and repository paths` | `cvs-plugin/src/com/intellij/cvsSupport2/changeBrowser/CvsChangeList.java` | Put on Tag tags a changeset's files in the repository (`rtag`) without a working copy |
 
 List them with `git log --oneline --grep "^upstream-patch:"`.
 

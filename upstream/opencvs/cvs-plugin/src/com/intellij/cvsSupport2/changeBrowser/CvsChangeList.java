@@ -168,6 +168,29 @@ public class CvsChangeList implements CommittedChangeList {
     return myDescription;
   }
 
+  // IntelliJCVS upstream-patch: read-only access to the connection and the repository paths of the changeset's
+  // files, so that a changeset can be tagged in the repository (rtag) without a working copy.
+  public CvsEnvironment getEnvironment() {
+    return myEnvironment;
+  }
+
+  // IntelliJCVS upstream-patch: see getEnvironment.
+  public List<FileRevision> getFileRevisions() {
+    final List<FileRevision> result = new ArrayList<>();
+    for (RevisionWrapper wrapper : myRevisions) {
+      final Revision revision = wrapper.getRevision();
+      result.add(new FileRevision(wrapper.getFile(), revision.getNumber(), DEAD_STATE.equals(revision.getState())));
+    }
+    return result;
+  }
+
+  /**
+   * IntelliJCVS upstream-patch: one file of a changeset — its path relative to the repository root (no leading
+   * {@code /}, no {@code ,v}, outside the Attic), its revision number, and whether that revision removed the file.
+   */
+  public record FileRevision(@NotNull String path, @NotNull String number, boolean removal) {
+  }
+
   public boolean containsDate(long date) {
     if (date >= myDate && date <= myFinishDate) {
       return true;
