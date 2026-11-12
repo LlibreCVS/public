@@ -11,7 +11,17 @@ import com.intellij.util.ui.FormBuilder
 import javax.swing.JComponent
 
 /** Why [name] (trimmed) is not a valid CVS tag name, or null when it is (design decision 10). */
-fun validateTagName(name: String): String? = null
+fun validateTagName(name: String): String? {
+    val tag = name.trim()
+    return when {
+        tag.isEmpty() -> "Enter a tag name"
+        tag.first() !in 'A'..'Z' && tag.first() !in 'a'..'z' -> "A tag name must start with a Latin letter"
+        !TAG_NAME.matches(tag) -> "A tag name may contain only Latin letters, digits, '-' and '_'"
+        else -> null
+    }
+}
+
+private val TAG_NAME = Regex("[A-Za-z][A-Za-z0-9_-]*")
 
 /**
  * Asks for the tag to put on a changeset: the tag name, "Move tag if it already exists" (checked by default,
@@ -19,12 +29,14 @@ fun validateTagName(name: String): String? = null
  */
 class PutOnTagDialog(project: Project?, files: List<String>) : DialogWrapper(project) {
     private val nameField = JBTextField(20)
-    private val moveBox = JBCheckBox("Move tag if it already exists", false)
+    private val moveBox = JBCheckBox("Move tag if it already exists", true)
     private val fileList = JBList(files)
 
     init {
         title = "Put on Tag"
         init()
+        // Validates while the user types; an invalid name shows its reason and disables OK.
+        initValidation()
     }
 
     /** The trimmed tag name. */
