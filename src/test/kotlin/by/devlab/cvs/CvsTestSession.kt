@@ -8,6 +8,7 @@ import com.intellij.cvsSupport2.changeBrowser.CvsRepositoryLocation
 import com.intellij.cvsSupport2.checkinProject.CvsCheckinEnvironment
 import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration
 import com.intellij.cvsSupport2.config.CvsConfiguration
+import com.intellij.cvsSupport2.config.DateOrRevisionSettings
 import com.intellij.cvsSupport2.cvsoperations.cvsAdd.AddedFileInfo
 import com.intellij.cvsSupport2.cvsoperations.cvsLog.LogOperation
 import com.intellij.openapi.progress.EmptyProgressIndicator
@@ -336,7 +337,35 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
      * decisions 12, 13, 14) and returns the update result. A merge conflict does not fail it; other CVS errors do.
      */
     fun updateWith(project: Project, root: Path, options: UpdateOptions = UpdateOptions()): UpdatedFiles {
-        throw NotImplementedError("updateWith")
+        // With both, the environment splits the update in two through its context; the IDE loops over that, the
+        // fixture does not (design decision 13).
+        require(options.branch == null || options.merge1 == null) { "a switch and a merge run as separate updates" }
+        require(options.merge2 == null || options.merge1 != null) { "a second merge point needs the first" }
+        if (options.merge1 != null) throw NotImplementedError("merge")
+        val environment = CvsUpdateEnvironment(project)
+        val roots = listOf(VcsUtil.getFilePath(virtualFile(root)))
+        // What the IDE calls when it shows the Update dialog: without it, updateDirectories drops RESET_STICKY. It
+        // resets the flags itself, so the dialog's settings go in after it (design decision 12).
+        environment.createConfigurable(roots)
+        val configuration = CvsConfiguration.getInstance(project)
+        val previousRevision = configuration.UPDATE_DATE_OR_REVISION_SETTINGS
+        configuration.UPDATE_DATE_OR_REVISION_SETTINGS = DateOrRevisionSettings().apply {
+            if (options.branch != null) {
+                USE_BRANCH = true
+                BRANCH = options.branch
+            }
+        }
+        configuration.RESET_STICKY = options.resetSticky
+        val updated = UpdatedFiles.create()
+        try {
+            val session = environment.updateDirectories(roots.toTypedArray(), updated, EmptyProgressIndicator(), Ref())
+            session.exceptions.firstOrNull { !it.isWarning }?.let { throw it }
+        } finally {
+            configuration.UPDATE_DATE_OR_REVISION_SETTINGS = previousRevision
+            configuration.RESET_STICKY = false
+        }
+        virtualFile(root).refresh(false, true)
+        return updated
     }
 
     /** The revision CVS/Entries records for [file], read in [charset]. */
