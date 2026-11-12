@@ -3,6 +3,7 @@ package by.devlab.cvs.branches
 import by.devlab.cvs.CvsTestSession
 import by.devlab.cvs.CvsTestSession.UpdateOptions
 import by.devlab.cvs.TestData
+import com.intellij.cvsSupport2.config.CvsConfiguration
 import com.intellij.openapi.vcs.update.FileGroup
 import com.intellij.openapi.vcs.update.UpdatedFiles
 import com.intellij.testFramework.junit5.TestApplication
@@ -66,10 +67,15 @@ class MergeBranchTest {
         assertEquals("один\nстрока с ветки\n", text(after, ONE))
         assertEquals("новый файл ветки\n", text(after, ADDED))
 
+        // The trunk drops the branch line again: a merge setting left behind would bring it back.
+        TestData.edit(a.resolve(ONE), "один\n".toByteArray())
+        session.commit(project.get(), listOf(a.resolve(ONE)), "alice убирает строку ветки")
+
         val plain = session.updateWith(project.get(), a)
 
         assertEquals(emptyList<String>(), files(plain), "a plain update after the merge commit")
-        assertEquals("один\nстрока с ветки\n", text(a, ONE))
+        assertEquals("один\n", text(a, ONE))
+        assertEquals(CvsConfiguration.DO_NOT_MERGE, CvsConfiguration.getInstance(project.get()).MERGING_MODE)
     }
 
     @Test

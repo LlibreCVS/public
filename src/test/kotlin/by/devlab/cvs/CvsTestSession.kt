@@ -341,7 +341,7 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         // fixture does not (design decision 13).
         require(options.branch == null || options.merge1 == null) { "a switch and a merge run as separate updates" }
         require(options.merge2 == null || options.merge1 != null) { "a second merge point needs the first" }
-        if (options.merge1 != null) throw NotImplementedError("merge")
+        if (options.merge2 != null) throw NotImplementedError("merge between two points")
         val environment = CvsUpdateEnvironment(project)
         val roots = listOf(VcsUtil.getFilePath(virtualFile(root)))
         // What the IDE calls when it shows the Update dialog: without it, updateDirectories drops RESET_STICKY. It
@@ -356,13 +356,22 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
             }
         }
         configuration.RESET_STICKY = options.resetSticky
+        val previousMerge = Triple(configuration.MERGING_MODE, configuration.MERGE_WITH_BRANCH1_NAME, configuration.MERGE_WITH_BRANCH2_NAME)
+        if (options.merge1 != null) {
+            configuration.MERGING_MODE = CvsConfiguration.MERGE_WITH_BRANCH
+            configuration.MERGE_WITH_BRANCH1_NAME = options.merge1
+        }
         val updated = UpdatedFiles.create()
         try {
             val session = environment.updateDirectories(roots.toTypedArray(), updated, EmptyProgressIndicator(), Ref())
+            // The session's onRefreshFilesCompleted is not called: it would open the merge dialog (design decision 14).
             session.exceptions.firstOrNull { !it.isWarning }?.let { throw it }
         } finally {
             configuration.UPDATE_DATE_OR_REVISION_SETTINGS = previousRevision
             configuration.RESET_STICKY = false
+            configuration.MERGING_MODE = previousMerge.first
+            configuration.MERGE_WITH_BRANCH1_NAME = previousMerge.second
+            configuration.MERGE_WITH_BRANCH2_NAME = previousMerge.third
         }
         virtualFile(root).refresh(false, true)
         return updated
