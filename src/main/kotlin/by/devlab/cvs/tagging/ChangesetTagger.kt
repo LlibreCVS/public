@@ -55,19 +55,29 @@ class ChangesetTagger(private val project: Project?) {
         // (design decisions 6, 23).
         val heads = HeadStateOperation(changeset.environment, paths)
         val lookup = run(heads)
-        if (lookup.error != null) return TagResult(tag, 0, emptyList(), emptyList(), lookup.error)
+        lookup.failure(emptyList())?.let { return TagResult(tag, 0, emptyList(), emptyList(), it) }
         val alive = paths.filterNot { it in heads.removed }
         if (alive.isEmpty()) return TagResult(tag, 0, emptyList(), emptyList(), null)
 
         val tagging = run(RtagOperation(changeset.environment, alive, tag, move))
         val unchanged = tagging.messages.filter { unchangedFile(it) != null }
         val notMoved = unchanged.mapNotNull { unchangedFile(it) }.distinct()
-        val error = tagging.error ?: tagging.errors.filterNot { it in unchanged }.takeIf { it.isNotEmpty() }?.joinToString("\n")
-        return TagResult(tag, alive.size - notMoved.size, notMoved, unchanged, error)
+        return TagResult(tag, alive.size - notMoved.size, notMoved, unchanged, tagging.failure(unchanged))
     }
 
     /** What one CVS operation produced: every server message, its error messages, and its failure, if any. */
-    private class Outcome(val messages: List<String>, val errors: List<String>, val error: String?)
+    private class Outcome(val messages: List<String>, val errors: List<String>, val error: String?) {
+        /**
+         * The text of the operation's failure, or null if it did its work. A path the server cannot find is a
+         * failure, although cvs reports it only as "ignored" (the module may no longer exist, design decision 20);
+         * [expected] messages (files left unchanged) are not.
+         */
+        fun failure(expected: List<String>): String? {
+            if (error != null) return error
+            val missing = messages.filter { CANNOT_FIND.matches(it.trim()) }
+            return (errors.filterNot { it in expected } + missing).distinct().takeIf { it.isNotEmpty() }?.joinToString("\n")
+        }
+    }
 
     private fun run(operation: LocalPathIndifferentOperation): Outcome {
         val handler = CommandCvsHandler("Put on Tag", operation, false)
@@ -162,6 +172,9 @@ class ChangesetTagger(private val project: Project?) {
     }
 
     private companion object {
+        /** "cvs rtag: cannot find module `module/file.txt' - ignored" (also from rlog and from `cvs server`). */
+        val CANNOT_FIND = Regex("""cvs [^:]+: cannot find module `.+' - ignored""")
+
         /** cvs 1.11 messages about a file left unchanged; group 1 is the file's repository path. */
         val UNCHANGED = listOf(
             // An existing tag without -F: `W module/file.txt : TEST already exists on version 1.2 : NOT MOVING tag to version 1.3`.
