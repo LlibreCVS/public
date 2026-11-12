@@ -18,6 +18,8 @@ import com.intellij.testFramework.junit5.fixture.tempPathFixture
 import com.intellij.testFramework.runInEdtAndWait
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import com.intellij.cvsSupport2.connections.CvsConnectionSettings
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -126,6 +128,25 @@ class PutOnTagActionTest {
 
         assertEquals(NotificationType.ERROR, notification.type)
         assertTrue("action-error" in notification.content, notification.content)
+    }
+
+    @Test
+    @DisplayName("Server error is reported when the root is offline")
+    fun serverErrorIsReportedWhenTheRootIsOffline() {
+        val copy = module("action-offline")
+        edit(copy, "edit of two files")
+        val changeset = changeset(copy, "edit of two files")
+        // The plugin takes a root offline when the user cancels a login; no command runs then.
+        val settings = changeset.environment as CvsConnectionSettings
+        settings.setOffline(true)
+        try {
+            val notification = perform(changeset, TagRequest("TEST", move = true))
+
+            assertEquals(NotificationType.ERROR, notification.type, notification.content)
+            assertNull(session.tagOf("action-offline/one.txt", "TEST"))
+        } finally {
+            settings.setOffline(false)
+        }
     }
 
     /** Imports `one.txt` and `two.txt` as [name], checks the module out as `alice` and maps it to CVS. */

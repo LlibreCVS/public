@@ -43,6 +43,15 @@ data class TagResult(
 )
 
 /**
+ * Which of [paths] (repository-relative, e.g. `module/file.txt`) the RCS file [rcsFile] (e.g.
+ * `/repository/module/Attic/file.txt,v`) of the repository [repository] is, or null if none.
+ */
+internal fun changesetPath(repository: String, rcsFile: String, paths: List<String>): String? {
+    val name = rcsFile.replace('\\', '/').removeSuffix(",v").replace("/Attic/", "/")
+    return paths.firstOrNull { name.endsWith("/$it") }
+}
+
+/**
  * Tags the files of a committed changeset in the repository with one `rtag`, on their latest trunk revisions,
  * without a working copy (design decisions 3, 6, 7, 16, 19, 20).
  */
@@ -142,9 +151,7 @@ class ChangesetTagger(private val project: Project?) {
             super.fileInfoGenerated(info)
             if (info !is LogInformation) return
             if (info.revisionList.firstOrNull()?.state != CvsChangeList.DEAD_STATE) return
-            // e.g. /repository/module/Attic/file.txt,v for module/file.txt
-            val rcsFile = info.rcsFileName.replace('\\', '/').removeSuffix(",v").replace("/Attic/", "/")
-            paths.firstOrNull { rcsFile.endsWith("/$it") }?.let { removed += it }
+            changesetPath(myEnvironment.repository, info.rcsFileName, paths)?.let { removed += it }
         }
     }
 
