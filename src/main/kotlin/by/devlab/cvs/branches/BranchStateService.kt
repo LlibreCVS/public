@@ -124,9 +124,12 @@ class BranchStateService(private val project: Project) : Disposable {
     fun roots(): List<Root> = cache
 
     /** The cached root that holds [file], the innermost one when roots are nested, or null. */
-    fun rootFor(file: VirtualFile): Root? {
-        val path = pathOf(file.path) ?: return null
-        return cache.filter { path.startsWith(it.path) }.maxByOrNull { it.path.nameCount }
+    fun rootFor(file: VirtualFile): Root? = rootFor(file.path)
+
+    /** The cached root that holds the file at [path] (a VFS or file-system path), the innermost one, or null. */
+    fun rootFor(path: String): Root? {
+        val file = pathOf(path) ?: return null
+        return cache.filter { file.startsWith(it.path) }.maxByOrNull { it.path.nameCount }
     }
 
     /** The indicator for the cached roots with [activeFile] in the active editor, or null without CVS roots. */
