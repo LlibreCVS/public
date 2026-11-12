@@ -319,6 +319,26 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         virtualFile(root).refresh(false, true)
     }
 
+    /**
+     * What the Update dialog sets on OK for a switch or a merge (design decision 8): [branch] is the "branch or tag"
+     * field (`-r`), [resetSticky] the reset-sticky option (`-A`), [merge1] and [merge2] the merge fields (`-j`, and a
+     * second `-j` with [merge2]).
+     */
+    data class UpdateOptions(
+        val branch: String? = null,
+        val resetSticky: Boolean = false,
+        val merge1: String? = null,
+        val merge2: String? = null,
+    )
+
+    /**
+     * Updates the working copy [root] the way the IDE does after OK in the Update dialog with [options] (design
+     * decisions 12, 13, 14) and returns the update result. A merge conflict does not fail it; other CVS errors do.
+     */
+    fun updateWith(project: Project, root: Path, options: UpdateOptions = UpdateOptions()): UpdatedFiles {
+        throw NotImplementedError("updateWith")
+    }
+
     /** The revision CVS/Entries records for [file], read in [charset]. */
     fun revision(file: Path, charset: Charset = Charsets.UTF_8): String = entry(file, charset).split('/')[2]
 
