@@ -40,6 +40,12 @@ object FakeWorkingCopy {
         return child
     }
 
+    /** Writes [content] (e.g. `TBR_RELEASE`, `NRELEASE_1`, `D2026.11.01.00.00.00`) as the CVS/Tag of [dir]. */
+    fun tag(dir: Path, content: String): Path {
+        Files.writeString(dir.resolve("CVS/Tag"), content + "\n")
+        return dir
+    }
+
     /** Appends [line] (without its line ending) to the CVS/Entries.Log of [parent]. */
     fun logEntry(parent: Path, line: String, charset: Charset = Charsets.UTF_8) {
         append(parent.resolve("CVS/Entries.Log"), "$line\n", charset)
