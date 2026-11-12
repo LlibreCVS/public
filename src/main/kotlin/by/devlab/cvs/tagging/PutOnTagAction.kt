@@ -75,8 +75,6 @@ class PutOnTagAction(private val requests: TagRequestSource = DIALOG) : DumbAwar
                     // The count is of files that did get the tag; the warning never says the tag is set.
                     "${files(result.taggedCount)} tagged.$kept\n" + result.unchangedMessages.joinToString("\n"),
                 )
-            result.taggedCount == 0 ->
-                Triple(NotificationType.WARNING, "Tag ${result.tag} was not set", "No file of the commit is on the trunk any more.$kept")
             else ->
                 Triple(NotificationType.INFORMATION, "Put on Tag", "Tag ${result.tag} set on ${files(result.taggedCount)}$kept")
         }
