@@ -233,9 +233,14 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         return operation.allBranches
     }
 
-    /** The sticky tag CVS/Entries records for [file] (without its `T`), or "" on the trunk (design decision 15). */
-    fun stickyTag(file: Path, charset: Charset = Charsets.UTF_8): String =
-        entry(file, charset).split('/').getOrElse(5) { "" }.removePrefix("T")
+    /**
+     * The sticky tag CVS/Entries records for [file] (without its `T`), or "" when the file has none: on the trunk, or
+     * sticky to a date (`D...`) rather than a tag (design decision 15). A branch and a plain tag look the same here.
+     */
+    fun stickyTag(file: Path, charset: Charset = Charsets.UTF_8): String {
+        val sticky = entry(file, charset).split('/').getOrElse(5) { "" }
+        return if (sticky.startsWith("T")) sticky.substring(1) else ""
+    }
 
     /** Every file of the working copy [root], CVS administrative files and merge backups (`.#name.revision`) left out. */
     fun workingFiles(root: Path): List<Path> =
@@ -344,7 +349,8 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
 
     /**
      * Updates the working copy [root] the way the IDE does after OK in the Update dialog with [options] (design
-     * decisions 12, 13, 14) and returns the update result. A merge conflict does not fail it; other CVS errors do.
+     * decisions 12, 13, 14) and returns the update result. CVS errors fail it; warnings do not, since a merge
+     * conflict must stay readable from the result (design decision 20).
      */
     fun updateWith(project: Project, root: Path, options: UpdateOptions = UpdateOptions()): UpdatedFiles {
         // With both, the environment splits the update in two through its context; the IDE loops over that, the
@@ -358,22 +364,22 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         environment.createConfigurable(roots)
         val configuration = CvsConfiguration.getInstance(project)
         val previousRevision = configuration.UPDATE_DATE_OR_REVISION_SETTINGS
-        configuration.UPDATE_DATE_OR_REVISION_SETTINGS = DateOrRevisionSettings().apply {
-            if (options.branch != null) {
-                USE_BRANCH = true
-                BRANCH = options.branch
-            }
-        }
-        configuration.RESET_STICKY = options.resetSticky
         val previousMerge = Triple(configuration.MERGING_MODE, configuration.MERGE_WITH_BRANCH1_NAME, configuration.MERGE_WITH_BRANCH2_NAME)
-        if (options.merge1 != null) {
-            configuration.MERGING_MODE =
-                if (options.merge2 == null) CvsConfiguration.MERGE_WITH_BRANCH else CvsConfiguration.MERGE_TWO_BRANCHES
-            configuration.MERGE_WITH_BRANCH1_NAME = options.merge1
-            if (options.merge2 != null) configuration.MERGE_WITH_BRANCH2_NAME = options.merge2
-        }
         val updated = UpdatedFiles.create()
         try {
+            configuration.UPDATE_DATE_OR_REVISION_SETTINGS = DateOrRevisionSettings().apply {
+                if (options.branch != null) {
+                    USE_BRANCH = true
+                    BRANCH = options.branch
+                }
+            }
+            configuration.RESET_STICKY = options.resetSticky
+            if (options.merge1 != null) {
+                configuration.MERGING_MODE =
+                    if (options.merge2 == null) CvsConfiguration.MERGE_WITH_BRANCH else CvsConfiguration.MERGE_TWO_BRANCHES
+                configuration.MERGE_WITH_BRANCH1_NAME = options.merge1
+                if (options.merge2 != null) configuration.MERGE_WITH_BRANCH2_NAME = options.merge2
+            }
             val session = environment.updateDirectories(roots.toTypedArray(), updated, EmptyProgressIndicator(), Ref())
             // The session's onRefreshFilesCompleted is not called: it would open the merge dialog (design decision 14).
             session.exceptions.firstOrNull { !it.isWarning }?.let { throw it }

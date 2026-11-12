@@ -3,3 +3,7 @@
 build/
 .intellijPlatform/
 .kotlin/
+
+# JVM crash dumps (hs_err, minidumps, compiler replay) hold the environment; never commit them
+hs_err_pid*
+replay_pid*

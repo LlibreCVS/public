@@ -8,6 +8,7 @@ import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.RegisterExtension
@@ -86,7 +87,19 @@ class SwitchBranchTest {
         session.updateWith(project.get(), a, UpdateOptions(branch = "BR_TWO"))
 
         assertEquals("один на второй ветке\n", text(a, ONE))
+        assertEquals("два\n", text(a, TWO))
         assertSticky(a, "BR_TWO")
+    }
+
+    // Fixture guard (code review): a switch to a branch that does not exist must fail, not pass as a warning.
+    @Test
+    @DisplayName("updateWith fails on a missing branch")
+    fun updateWithFailsOnAMissingBranch() {
+        val a = trunkCopy("switch-missing")
+
+        assertThrows(Exception::class.java) { session.updateWith(project.get(), a, UpdateOptions(branch = "NO_SUCH_BRANCH")) }
+
+        assertSticky(a, "")
     }
 
     // Review focus: a directory that exists only on the branch goes away on the trunk and comes back.
