@@ -237,10 +237,12 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
     fun stickyTag(file: Path, charset: Charset = Charsets.UTF_8): String =
         entry(file, charset).split('/').getOrElse(5) { "" }.removePrefix("T")
 
-    /** Every file of the working copy [root], CVS administrative files left out. */
+    /** Every file of the working copy [root], CVS administrative files and merge backups (`.#name.revision`) left out. */
     fun workingFiles(root: Path): List<Path> =
         Files.walk(root).use { paths ->
-            paths.filter { Files.isRegularFile(it) && it.parent.fileName.toString() != "CVS" }.toList().sorted()
+            paths.filter {
+                Files.isRegularFile(it) && it.parent.fileName.toString() != "CVS" && !it.fileName.toString().startsWith(".#")
+            }.toList().sorted()
         }
 
     /**
@@ -248,7 +250,7 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
      * `cvs rtag`, as a merge point (design decision 7).
      */
     fun tag(module: String, tag: String, revisionOrBranch: String) {
-        throw NotImplementedError("tag")
+        server.cvs("rtag", "-r", revisionOrBranch, tag, module)
     }
 
     /** Deletes [file] from the working copy, schedules its removal through the plugin and commits it. */
@@ -349,7 +351,6 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         // fixture does not (design decision 13).
         require(options.branch == null || options.merge1 == null) { "a switch and a merge run as separate updates" }
         require(options.merge2 == null || options.merge1 != null) { "a second merge point needs the first" }
-        if (options.merge2 != null) throw NotImplementedError("merge between two points")
         val environment = CvsUpdateEnvironment(project)
         val roots = listOf(VcsUtil.getFilePath(virtualFile(root)))
         // What the IDE calls when it shows the Update dialog: without it, updateDirectories drops RESET_STICKY. It
@@ -366,8 +367,10 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         configuration.RESET_STICKY = options.resetSticky
         val previousMerge = Triple(configuration.MERGING_MODE, configuration.MERGE_WITH_BRANCH1_NAME, configuration.MERGE_WITH_BRANCH2_NAME)
         if (options.merge1 != null) {
-            configuration.MERGING_MODE = CvsConfiguration.MERGE_WITH_BRANCH
+            configuration.MERGING_MODE =
+                if (options.merge2 == null) CvsConfiguration.MERGE_WITH_BRANCH else CvsConfiguration.MERGE_TWO_BRANCHES
             configuration.MERGE_WITH_BRANCH1_NAME = options.merge1
+            if (options.merge2 != null) configuration.MERGE_WITH_BRANCH2_NAME = options.merge2
         }
         val updated = UpdatedFiles.create()
         try {
