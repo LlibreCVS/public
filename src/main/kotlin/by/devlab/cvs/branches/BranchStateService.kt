@@ -5,7 +5,11 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.FileEditorManagerEvent
+import com.intellij.openapi.fileEditor.FileEditorManagerListener
+import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.ProjectLevelVcsManager
 import com.intellij.openapi.vcs.VcsListener
@@ -74,6 +78,12 @@ class BranchStateService(private val project: Project) : Disposable {
             override fun after(events: List<VFileEvent>) = onFileEvents(events)
         })
         connection.subscribe(ProjectLevelVcsManager.VCS_CONFIGURATION_CHANGED, VcsListener { refresh() })
+        // With several roots the shown root follows the active editor (design decision 8).
+        connection.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
+            override fun selectionChanged(event: FileEditorManagerEvent) {
+                if (cache.size > 1) project.messageBus.syncPublisher(TOPIC).stateChanged()
+            }
+        })
         refresh()
     }
 
@@ -218,7 +228,14 @@ class BranchStateService(private val project: Project) : Disposable {
 
     private fun publish(roots: List<Root>) {
         if (roots == cache || disposed || project.isDisposed) return
+        val availabilityChanged = roots.isEmpty() != cache.isEmpty()
         cache = roots
+        if (availabilityChanged) {
+            // The status-bar widget exists only in a project with CVS roots (design decision 9).
+            ApplicationManager.getApplication().invokeLater({
+                project.service<StatusBarWidgetsManager>().updateWidget(BranchStatusBarWidgetFactory::class.java)
+            }, project.disposed)
+        }
         project.messageBus.syncPublisher(TOPIC).stateChanged()
     }
 
