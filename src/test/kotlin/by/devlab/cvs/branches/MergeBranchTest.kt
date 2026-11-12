@@ -101,6 +101,49 @@ class MergeBranchTest {
         assertTrue(conflicts.any { Path.of(it).fileName.toString() == ONE }, "conflict group: $conflicts")
     }
 
+    @Test
+    @DisplayName("Repeated merge brings only new changes")
+    fun repeatedMergeBringsOnlyNewChanges() {
+        val module = "merge-repeated"
+        val a = trunkCopy(module)
+        session.branch(module, "BR")
+        val b = branchCopy(module, "BR")
+        TestData.edit(b.resolve(ONE), "один\nпервая правка ветки\n".toByteArray())
+        session.commit(project.get(), listOf(b.resolve(ONE)), "bob: первая правка")
+        session.updateWith(project.get(), a, UpdateOptions(merge1 = "BR"))
+        session.commit(project.get(), listOf(a.resolve(ONE)), "alice сливает BR")
+        // The merge point (design decision 7).
+        session.tag(module, "BR_MERGED_1", "BR")
+        TestData.edit(b.resolve(ONE), "один\nпервая правка ветки\nвторая правка ветки\n".toByteArray())
+        session.commit(project.get(), listOf(b.resolve(ONE)), "bob: вторая правка")
+
+        val updated = session.updateWith(project.get(), a, UpdateOptions(merge1 = "BR_MERGED_1", merge2 = "BR"))
+
+        assertEquals("один\nпервая правка ветки\nвторая правка ветки\n", text(a, ONE))
+        val conflicts = checkNotNull(updated.getGroupById(FileGroup.MERGED_WITH_CONFLICT_ID)).files
+        assertTrue(conflicts.isEmpty(), "conflict group: $conflicts")
+        assertEquals("", session.stickyTag(a.resolve(ONE)))
+    }
+
+    @Test
+    @DisplayName("Merge the trunk into a branch")
+    fun mergeTheTrunkIntoABranch() {
+        val module = "merge-trunk-into-branch"
+        val a = trunkCopy(module)
+        session.branch(module, "BR")
+        val b = branchCopy(module, "BR")
+        TestData.edit(b.resolve(ONE), "один на ветке\n".toByteArray())
+        session.commit(project.get(), listOf(b.resolve(ONE)), "bob меняет один на ветке")
+        TestData.edit(a.resolve(TWO), "два на стволе\n".toByteArray())
+        session.commit(project.get(), listOf(a.resolve(TWO)), "alice меняет два на стволе")
+
+        session.updateWith(project.get(), b, UpdateOptions(merge1 = "HEAD"))
+
+        assertEquals("два на стволе\n", text(b, TWO))
+        assertEquals("один на ветке\n", text(b, ONE))
+        for (file in session.workingFiles(b)) assertEquals("BR", session.stickyTag(file), "sticky tag of $file")
+    }
+
     /** Imports the module (a file at the top, one in a Cyrillic subdirectory) and checks it out as alice. */
     private fun trunkCopy(module: String): Path {
         session.useEncoding(Charsets.UTF_8)

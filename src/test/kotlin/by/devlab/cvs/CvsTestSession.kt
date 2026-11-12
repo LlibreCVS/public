@@ -243,6 +243,14 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
             paths.filter { Files.isRegularFile(it) && it.parent.fileName.toString() != "CVS" }.toList().sorted()
         }
 
+    /**
+     * Puts tag [tag] on [module] at [revisionOrBranch] (a branch tags its latest revisions) with the fixture's own
+     * `cvs rtag`, as a merge point (design decision 7).
+     */
+    fun tag(module: String, tag: String, revisionOrBranch: String) {
+        throw NotImplementedError("tag")
+    }
+
     /** Deletes [file] from the working copy, schedules its removal through the plugin and commits it. */
     fun removeAndCommit(project: Project, file: Path, message: String) {
         Files.delete(file)
