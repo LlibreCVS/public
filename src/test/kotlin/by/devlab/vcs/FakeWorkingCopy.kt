@@ -46,6 +46,14 @@ object FakeWorkingCopy {
         return dir
     }
 
+    /**
+     * Lists file [name] in the CVS/Entries of [dir] at revision [revision] with the sticky field [sticky] (`T<tag>`,
+     * `D<date>` or empty), the line encoded in [charset]. The file itself is not written.
+     */
+    fun fileEntry(dir: Path, name: String, sticky: String = "", revision: String = "1.1", charset: Charset = Charsets.UTF_8) {
+        append(dir.resolve("CVS/Entries"), "/$name/$revision/Thu Nov 12 10:00:00 2026//$sticky\n", charset)
+    }
+
     /** Appends [line] (without its line ending) to the CVS/Entries.Log of [parent]. */
     fun logEntry(parent: Path, line: String, charset: Charset = Charsets.UTF_8) {
         append(parent.resolve("CVS/Entries.Log"), "$line\n", charset)

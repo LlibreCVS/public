@@ -60,6 +60,26 @@ data class BranchState(val kind: BranchKind, val name: String) {
     }
 }
 
+/**
+ * A root's [state] with the number of its files on another branch ([mixedFiles], design decision 7); the ` *` mark
+ * and the tooltip's count come from it.
+ */
+data class RootStatus(val state: BranchState, val mixedFiles: Int = 0) {
+
+    /** The state's text, followed by ` *` when files are on another branch. */
+    val text: String get() = TODO()
+
+    /** The state's tooltip line, with the number of files on another branch when there are any. */
+    val tooltip: String get() = TODO()
+}
+
+/** Counts the files of a working copy whose sticky tag differs from its root's (design decisions 7, 15, 18). */
+object MixedScan {
+
+    /** The number of files of the working copy [root] on another branch than the root directory. */
+    fun count(root: Path): Int = TODO()
+}
+
 /** Reading the sticky information CVS keeps in a directory's administrative files. */
 internal object StickyTag {
 
