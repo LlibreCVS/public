@@ -9,6 +9,7 @@ import com.intellij.cvsSupport2.checkinProject.CvsCheckinEnvironment
 import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration
 import com.intellij.cvsSupport2.config.CvsConfiguration
 import com.intellij.cvsSupport2.cvsoperations.cvsAdd.AddedFileInfo
+import com.intellij.cvsSupport2.cvsoperations.cvsLog.LogOperation
 import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.util.Ref
 import com.intellij.openapi.vcs.ProjectLevelVcsManager
@@ -215,18 +216,25 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
      * configuration; with [switch] the working copy is then updated to the branch.
      */
     fun createBranch(project: Project, root: Path, branch: String, switch: Boolean) {
-        throw NotImplementedError("createBranch")
+        val readOnly = CvsConfiguration.getInstance(project).MAKE_NEW_FILES_READONLY
+        val selected = arrayOf(VcsUtil.getFilePath(virtualFile(root)))
+        run(CommandCvsHandler.createBranchHandler(selected, branch, switch, false, readOnly, project), project)
+        virtualFile(root).refresh(false, true)
     }
 
-    /** The branch names the branch chooser offers for the working copy [root] (design decision 16). */
+    /**
+     * The branch names the branch chooser offers for the working copy [root] (design decision 16): a header-only
+     * `log` through a [CommandCvsHandler], as the chooser's private `TagsHelper.collectAllBranches` runs it.
+     */
     fun branches(project: Project, root: Path): Collection<String> {
-        throw NotImplementedError("branches")
+        val operation = LogOperation(listOf(VcsUtil.getFilePath(virtualFile(root))))
+        run(CommandCvsHandler("load tags", operation, true), project)
+        return operation.allBranches
     }
 
     /** The sticky tag CVS/Entries records for [file] (without its `T`), or "" on the trunk (design decision 15). */
-    fun stickyTag(file: Path, charset: Charset = Charsets.UTF_8): String {
-        throw NotImplementedError("stickyTag")
-    }
+    fun stickyTag(file: Path, charset: Charset = Charsets.UTF_8): String =
+        entry(file, charset).split('/').getOrElse(5) { "" }.removePrefix("T")
 
     /** Every file of the working copy [root], CVS administrative files left out. */
     fun workingFiles(root: Path): List<Path> =
