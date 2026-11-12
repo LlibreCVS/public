@@ -204,6 +204,11 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         }
     }
 
+    /** Starts branch [branch] in the repository from the current trunk revisions of [module]. */
+    fun branch(module: String, branch: String) {
+        server.cvs("rtag", "-b", branch, module)
+    }
+
     /** Deletes [file] from the working copy, schedules its removal through the plugin and commits it. */
     fun removeAndCommit(project: Project, file: Path, message: String) {
         Files.delete(file)
