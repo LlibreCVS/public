@@ -2,6 +2,9 @@ package by.devlab.cvs
 
 import com.intellij.cvsSupport2.CvsUpdateEnvironment
 import com.intellij.cvsSupport2.CvsVcs2
+import com.intellij.cvsSupport2.changeBrowser.CvsChangeList
+import com.intellij.cvsSupport2.changeBrowser.CvsCommittedChangesProvider
+import com.intellij.cvsSupport2.changeBrowser.CvsRepositoryLocation
 import com.intellij.cvsSupport2.checkinProject.CvsCheckinEnvironment
 import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration
 import com.intellij.cvsSupport2.config.CvsConfiguration
@@ -201,6 +204,31 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         }
     }
 
+    /** Starts branch [branch] in the repository from the current trunk revisions of [module]. */
+    fun branch(module: String, branch: String) {
+        server.cvs("rtag", "-b", branch, module)
+    }
+
+    /** Deletes [file] from the working copy, schedules its removal through the plugin and commits it. */
+    fun removeAndCommit(project: Project, file: Path, message: String) {
+        Files.delete(file)
+        virtualFile(file.parent)
+        run(CommandCvsHandler.createRemoveFilesHandler(project, listOf(file.toFile())), project)
+        val change = Change(CurrentContentRevision(VcsUtil.getFilePath(file.toFile(), false)), null)
+        val errors = CvsCheckinEnvironment(project).commit(listOf(change), message, CommitContext(), mutableSetOf())
+        errors?.firstOrNull()?.let { throw it }
+    }
+
+    /**
+     * The revision the tag [tag] points to in the repository file [path] (`module/file.txt`), read from the RCS file
+     * with the fixture's own `cvs rlog -h`, or null when the file does not carry the tag.
+     */
+    fun tagOf(path: String, tag: String): String? {
+        val log = server.cvs("rlog", "-h", path)
+        val names = log.lines().dropWhile { !it.startsWith("symbolic names:") }.drop(1).takeWhile { it.startsWith("\t") }
+        return names.map { it.trim().split(": ") }.firstOrNull { it[0] == tag }?.get(1)
+    }
+
     /** The keyword substitution CVS/Entries records for [file] (e.g. `-kb`), or "" for the default. */
     fun keywordSubstitution(file: Path, charset: Charset = Charsets.UTF_8): String = entry(file, charset).split('/')[4]
 
@@ -215,6 +243,21 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
             .sortedByDescending { it.revisionNumber }
             .map { Revision(it.revisionNumber.asString(), it.author.orEmpty(), it.commitMessage.orEmpty().trimEnd()) }
     }
+
+    /** The repository location of the working copy [root] as the Repository view gets it from the provider. */
+    fun repositoryLocation(project: Project, root: Path): CvsRepositoryLocation =
+        checkNotNull(committedChangesProvider(project).getLocationFor(VcsUtil.getFilePath(virtualFile(root)))) {
+            "no repository location for $root"
+        }
+
+    /** The committed changesets of the working copy [root], loaded the way the Repository view loads them. */
+    fun changesets(project: Project, root: Path): List<CvsChangeList> {
+        val provider = committedChangesProvider(project)
+        return provider.getCommittedChanges(provider.createDefaultSettings(), repositoryLocation(project, root), 0)
+    }
+
+    private fun committedChangesProvider(project: Project): CvsCommittedChangesProvider =
+        CvsVcs2.getInstance(project).committedChangesProvider as CvsCommittedChangesProvider
 
     /** One line as annotate shows it. */
     data class AnnotatedLine(val revision: String, val author: String, val text: String)

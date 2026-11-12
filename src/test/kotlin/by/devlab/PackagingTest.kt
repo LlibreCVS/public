@@ -6,9 +6,13 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.w3c.dom.Element
+import org.xml.sax.InputSource
+import java.io.StringReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.ZipFile
+import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * The packaged plugin jar: OpenCVS's resources are in it, its sources are not, and the licenses travel with it
@@ -53,10 +57,43 @@ class PackagingTest {
         }
     }
 
+    @Test
+    @DisplayName("Action sits in the Repository toolbar and menu")
+    fun actionSitsInTheRepositoryToolbarAndMenu() {
+        val root = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(InputSource(StringReader(jarEntry("META-INF/plugin.xml")))).documentElement
+        assertEquals("idea-plugin", root.tagName)
+        // Only children of the root count: the platform ignores anything nested deeper.
+        val actions = root.children("actions").flatMap { it.children("action") }
+        val action = actions.singleOrNull { it.getAttribute("id") == "IntelliJCVS.PutOnTag" }
+        checkNotNull(action) { "no action IntelliJCVS.PutOnTag under <actions> of the packaged descriptor" }
+        assertEquals("by.devlab.cvs.tagging.PutOnTagAction", action.getAttribute("class"))
+        assertEquals("Put on Tag...", action.getAttribute("text"))
+        assertEquals(
+            setOf("CommittedChangesToolbar", "ChangesViewPopupMenu"),
+            action.children("add-to-group").map { it.getAttribute("group-id") }.toSet(),
+        )
+        val groups = root.children("extensions").flatMap { it.children("notificationGroup") }
+        assertTrue(groups.any { it.getAttribute("id") == "IntelliJCVS" }, "no notification group IntelliJCVS")
+    }
+
+    private fun Element.children(tag: String): List<Element> =
+        (0 until childNodes.length).map { childNodes.item(it) }.filterIsInstance<Element>().filter { it.tagName == tag }
+
+    /** The text of [name] in the plugin jar. */
+    private fun jarEntry(name: String): String =
+        ZipFile(pluginJar().toFile()).use { zip ->
+            zip.getInputStream(checkNotNull(zip.getEntry(name)) { "no $name in the jar" }).readBytes().toString(Charsets.UTF_8)
+        }
+
     /** Entry names of the plugin jar that the build passes in system property `intellijcvs.jar`. */
-    private fun jarEntries(): Set<String> {
+    private fun jarEntries(): Set<String> =
+        ZipFile(pluginJar().toFile()).use { zip -> zip.entries().asSequence().map { it.name }.toSet() }
+
+    /** The plugin jar that the build passes in system property `intellijcvs.jar`. */
+    private fun pluginJar(): Path {
         val jar = Path.of(checkNotNull(System.getProperty("intellijcvs.jar")) { "intellijcvs.jar is not set" })
         check(Files.isRegularFile(jar)) { "no plugin jar at $jar" }
-        return ZipFile(jar.toFile()).use { zip -> zip.entries().asSequence().map { it.name }.toSet() }
+        return jar
     }
 }

@@ -1,0 +1,17 @@
+<!--
+  IntelliJCVS's own descriptor entries. The build merges the children of this <idea-plugin> into OpenCVS's
+  plugin.xml, which stays untouched (tag-committed-changeset design decision 17); this file is not packaged.
+-->
+<idea-plugin>
+  <extensions defaultExtensionNs="com.intellij">
+    <notificationGroup id="IntelliJCVS" displayType="BALLOON"/>
+  </extensions>
+
+  <actions>
+    <action id="IntelliJCVS.PutOnTag" class="by.devlab.cvs.tagging.PutOnTagAction" text="Put on Tag..."
+            description="Put a CVS tag on the latest trunk revisions of the files of the selected commit">
+      <add-to-group group-id="CommittedChangesToolbar" anchor="last"/>
+      <add-to-group group-id="ChangesViewPopupMenu" anchor="last"/>
+    </action>
+  </actions>
+</idea-plugin>
