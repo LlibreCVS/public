@@ -90,7 +90,8 @@ class ChangesetTagger(private val project: Project?) {
     }
 
     /** The repository path of the file a server message says was left unchanged, or null for any other message. */
-    private fun unchangedFile(message: String): String? = NOT_MOVING.matchEntire(message.trim())?.groupValues?.get(1)
+    private fun unchangedFile(message: String): String? =
+        UNCHANGED.firstNotNullOfOrNull { it.matchEntire(message.trim()) }?.groupValues?.get(1)
 
     /**
      * `rtag` of repository paths: upstream's `RTagOperation` maps local files through a working copy's
@@ -161,7 +162,12 @@ class ChangesetTagger(private val project: Project?) {
     }
 
     private companion object {
-        /** CVS 1.11: `W module/file.txt : TEST already exists on version 1.2 : NOT MOVING tag to version 1.3`. */
-        val NOT_MOVING = Regex("""W (.+) : \S+ already exists on (?:version|branch) \S+ : NOT MOVING tag to (?:version|branch) \S+""")
+        /** cvs 1.11 messages about a file left unchanged; group 1 is the file's repository path. */
+        val UNCHANGED = listOf(
+            // An existing tag without -F: `W module/file.txt : TEST already exists on version 1.2 : NOT MOVING tag to version 1.3`.
+            Regex("""W (.+) : \S+ already exists on (?:version|branch) \S+ : NOT MOVING tag to (?:version|branch) \S+"""),
+            // A branch tag with -F: "cvs rtag: module/file.txt: Not moving branch tag `BR' from 1.3 to 1.3."
+            Regex("""cvs [^:]+: (.+): Not moving branch tag `\S+' from \S+ to \S+"""),
+        )
     }
 }
