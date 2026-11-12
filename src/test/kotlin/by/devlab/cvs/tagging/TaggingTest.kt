@@ -8,9 +8,11 @@ import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.RegisterExtension
+import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.isRegularFile
@@ -117,6 +119,56 @@ class TaggingTest {
 
         assertEquals(before, snapshot(copy))
         assertEquals("1.2", session.tagOf("tag-untouched/one.txt", "TEST"))
+    }
+
+    @Test
+    @DisplayName("Branch tag is not moved")
+    fun branchTagIsNotMoved() {
+        val copy = module("tag-branch", "one.txt", "two.txt")
+        edit(copy, "one.txt", "two.txt", message = "edit before the branch")
+        session.server.cvs("rtag", "-b", "BR", "tag-branch")
+        edit(copy, "one.txt", "two.txt", message = "edit after the branch")
+        val branch = session.tagOf("tag-branch/one.txt", "BR")
+
+        val result = tag(copy, "edit after the branch", "BR", move = true)
+
+        assertEquals("1.2.0.2", branch)
+        assertEquals(branch, session.tagOf("tag-branch/one.txt", "BR"))
+        assertEquals(branch, session.tagOf("tag-branch/two.txt", "BR"))
+        assertTrue(result.unchangedMessages.isNotEmpty(), "$result")
+        assertTrue(result.unchangedMessages.all { "BR" in it }, "$result")
+        assertEquals(0, result.taggedCount, "$result")
+        assertNull(result.error, "$result")
+    }
+
+    @Test
+    @DisplayName("Cyrillic names tagged in UTF-8")
+    fun cyrillicNamesTaggedInUtf8() = cyrillicNamesTagged("tag-utf8", Charsets.UTF_8)
+
+    @Test
+    @DisplayName("Cyrillic names tagged in windows-1251")
+    fun cyrillicNamesTaggedInWindows1251() = cyrillicNamesTagged("tag-cp1251", Charset.forName("windows-1251"))
+
+    /**
+     * With the CVS encoding [charset]: the Cyrillic seed module is imported, two of its Cyrillic files (one in a
+     * Cyrillic directory, with spaces in the name) are committed together, and that changeset is tagged.
+     */
+    private fun cyrillicNamesTagged(name: String, charset: Charset) {
+        session.useEncoding(charset)
+        val seed = TestData.seed(session.newDirectory("$name-seed"), charset)
+        session.importModule("alice", seed, name, binaryExtensions = listOf("bin"))
+        val copy = session.checkout("alice", name, session.newDirectory(name))
+        session.mapToCvs(project.get(), copy)
+        val files = listOf(TestData.CYRILLIC_TEXT, TestData.EMPTY)
+        files.forEach { TestData.edit(copy.resolve(it), "правка\n".toByteArray(charset)) }
+        session.commit(project.get(), files.map { copy.resolve(it) }, "правка двух файлов")
+
+        val result = tag(copy, "правка двух файлов", "TEST", move = true)
+
+        assertEquals("1.2", session.tagOf("$name/${TestData.CYRILLIC_TEXT}", "TEST"), "$result")
+        assertEquals("1.2", session.tagOf("$name/${TestData.EMPTY}", "TEST"), "$result")
+        assertNull(session.tagOf("$name/${TestData.NO_FINAL_NEWLINE}", "TEST"))
+        assertEquals(TagResult("TEST", 2, emptyList(), emptyList(), null), result)
     }
 
     /** Imports [files] as [name], checks the module out as `alice` and maps the working copy to CVS. */
