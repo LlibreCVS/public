@@ -8,7 +8,15 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.ProjectLevelVcsManager
+import com.intellij.openapi.vcs.VcsListener
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.messages.Topic
 import java.io.IOException
@@ -61,7 +69,45 @@ class BranchStateService(private val project: Project) : Disposable {
     private var disposed = false
 
     init {
+        val connection = project.messageBus.connect(this)
+        connection.subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
+            override fun after(events: List<VFileEvent>) = onFileEvents(events)
+        })
+        connection.subscribe(ProjectLevelVcsManager.VCS_CONFIGURATION_CHANGED, VcsListener { refresh() })
         refresh()
+    }
+
+    /**
+     * Turns VFS events into recomputations (design decision 11): a changed `CVS/Tag`, `CVS/Entries` or
+     * `CVS/Entries.Log` recomputes the root that holds it; a `CVS` directory or its `Root` or `Repository` file
+     * created, deleted or moved finds the roots again. Runs on the thread that applies the events, so it only looks
+     * at the paths.
+     */
+    private fun onFileEvents(events: List<VFileEvent>) {
+        if (disposed) return
+        var rediscover = false
+        val changed = ArrayList<Path>()
+        for (event in events) {
+            val paths = if (event is VFileMoveEvent) listOf(event.oldPath, event.path) else listOf(event.path)
+            for (eventPath in paths) {
+                val name = eventPath.substringAfterLast('/')
+                val parentName = eventPath.substringBeforeLast('/', "").substringAfterLast('/')
+                when {
+                    name == "CVS" && event !is VFileContentChangeEvent -> {
+                        rediscover = true
+                        pathOf(eventPath.substringBeforeLast('/', ""))?.let { changed.add(it) }
+                    }
+                    parentName == "CVS" && name in STATE_FILES -> {
+                        pathOf(eventPath.substringBeforeLast('/').substringBeforeLast('/', ""))?.let { changed.add(it) }
+                    }
+                    parentName == "CVS" && name in ROOT_FILES && event !is VFileContentChangeEvent -> rediscover = true
+                    event is VFileDeleteEvent || event is VFileMoveEvent ->
+                        // A deleted or moved directory may hold roots.
+                        pathOf(eventPath)?.let { path -> if (cache.any { it.path.startsWith(path) }) rediscover = true }
+                }
+            }
+        }
+        if (rediscover || changed.any { path -> cache.any { path.startsWith(it.path) } }) changed(changed, rediscover)
     }
 
     /** The cached roots, sorted by path; empty in a project without CVS roots. */
@@ -146,14 +192,28 @@ class BranchStateService(private val project: Project) : Disposable {
             val toScan = roots.filter { root ->
                 scanAll || rediscover || root.path !in previous || paths.any { it.startsWith(root.path) }
             }
-            if (toScan.isEmpty()) return
             roots = roots.map { root ->
-                if (root in toScan && !disposed) root.copy(status = root.status.copy(mixedFiles = MixedScan.count(root.path))) else root
+                if (root !in toScan || disposed) return@map root
+                root.copy(status = root.status.copy(mixedFiles = MixedScan.count(root.path, ::watch)))
             }
+            // The roots not scanned now still need their own CVS directory watched, e.g. after a rediscovery.
+            roots.filter { it !in toScan }.forEach { watch(it.path) }
             publish(roots)
         } catch (e: Exception) {
             LOG.warn("Cannot compute the CVS branch state", e)
         }
+    }
+
+    /**
+     * Loads the children of the working-copy directory [dir] and of its `CVS` directory into the VFS, which reports
+     * changes only for loaded files (as OpenCVS's `CvsEntriesManager.ensureFilesCached` does). It reads the disk and
+     * writes nothing.
+     */
+    private fun watch(dir: Path) {
+        val fileSystem = LocalFileSystem.getInstance()
+        val directory = fileSystem.findFileByNioFile(dir) ?: return
+        directory.children
+        directory.findChild("CVS")?.children
     }
 
     private fun publish(roots: List<Root>) {
@@ -217,6 +277,12 @@ class BranchStateService(private val project: Project) : Disposable {
 
         /** How long changes are collected before the state is recomputed. */
         private const val DEBOUNCE_MILLIS = 300L
+
+        /** The administrative files whose change can change a root's state or mixed count. */
+        private val STATE_FILES = setOf("Tag", "Entries", "Entries.Log")
+
+        /** The administrative files that, next to `Entries`, make a directory a working-copy directory. */
+        private val ROOT_FILES = setOf("Root", "Repository")
 
         @Topic.ProjectLevel
         val TOPIC: Topic<BranchStateListener> = Topic(BranchStateListener::class.java, Topic.BroadcastDirection.NONE)

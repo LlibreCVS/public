@@ -88,13 +88,17 @@ data class RootStatus(val state: BranchState, val mixedFiles: Int = 0) {
  */
 object MixedScan {
 
-    /** The number of files of the working copy [root] on another branch than the root directory. */
-    fun count(root: Path): Int {
+    /**
+     * The number of files of the working copy [root] on another branch than the root directory; [onDirectory] is
+     * called with each working-copy directory scanned.
+     */
+    fun count(root: Path, onDirectory: (Path) -> Unit = {}): Int {
         val rootSticky = StickyTag.ofDirectoryTag(StickyTag.readDirectoryTag(root))
         var count = 0
         val pending = ArrayDeque(listOf(root))
         while (pending.isNotEmpty()) {
             val dir = pending.removeFirst()
+            onDirectory(dir)
             count += StickyTag.fileStickyFields(dir).count { StickyTag.ofEntry(it) != rootSticky }
             pending.addAll(TrackedDirectories.of(dir))
         }
