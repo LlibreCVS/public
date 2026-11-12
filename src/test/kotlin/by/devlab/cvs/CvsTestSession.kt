@@ -209,6 +209,31 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         server.cvs("rtag", "-b", branch, module)
     }
 
+    /**
+     * Creates branch [branch] on the working copy [root] the way the Create Branch action does after OK in its dialog
+     * (design decision 17): the root as the selected file, "override existing" off, read-only setting from the
+     * configuration; with [switch] the working copy is then updated to the branch.
+     */
+    fun createBranch(project: Project, root: Path, branch: String, switch: Boolean) {
+        throw NotImplementedError("createBranch")
+    }
+
+    /** The branch names the branch chooser offers for the working copy [root] (design decision 16). */
+    fun branches(project: Project, root: Path): Collection<String> {
+        throw NotImplementedError("branches")
+    }
+
+    /** The sticky tag CVS/Entries records for [file] (without its `T`), or "" on the trunk (design decision 15). */
+    fun stickyTag(file: Path, charset: Charset = Charsets.UTF_8): String {
+        throw NotImplementedError("stickyTag")
+    }
+
+    /** Every file of the working copy [root], CVS administrative files left out. */
+    fun workingFiles(root: Path): List<Path> =
+        Files.walk(root).use { paths ->
+            paths.filter { Files.isRegularFile(it) && it.parent.fileName.toString() != "CVS" }.toList().sorted()
+        }
+
     /** Deletes [file] from the working copy, schedules its removal through the plugin and commits it. */
     fun removeAndCommit(project: Project, file: Path, message: String) {
         Files.delete(file)
