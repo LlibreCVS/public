@@ -85,7 +85,7 @@ class TaggingTest {
 
         assertEquals("1.2", session.tagOf("tag-keep/one.txt", "TEST"))
         assertEquals("1.2", session.tagOf("tag-keep/two.txt", "TEST"))
-        assertEquals(listOf("tag-keep/one.txt", "tag-keep/two.txt"), result.notMoved.sorted())
+        assertEquals(listOf("tag-keep/one.txt", "tag-keep/two.txt"), result.notMoved.sorted(), "$result")
         assertEquals(2, result.unchangedMessages.size, "${result.unchangedMessages}")
         assertNull(result.error)
     }
@@ -102,7 +102,7 @@ class TaggingTest {
 
         assertEquals("1.3", session.tagOf("tag-deleted/one.txt", "TEST"))
         assertEquals("1.2", session.tagOf("tag-deleted/two.txt", "TEST"))
-        assertNull(result.error)
+        assertEquals(TagResult("TEST", 1, emptyList(), emptyList(), null), result)
     }
 
     @Test
