@@ -189,8 +189,24 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
      * call, so a child that has exited, or whose parent has exited, stays on the list.
      */
     fun startedProcesses(): List<ProcessHandle> {
-        processes.toList().forEach { process -> process.descendants().forEach { descendants.addIfAbsent(it) } }
+        processes.toList().forEach { process -> descendantsOf(process).forEach { descendants.addIfAbsent(it) } }
         return (processes + descendants).distinct()
+    }
+
+    /**
+     * The descendants of [process]. On Windows the process snapshot behind [ProcessHandle.descendants] fails now and
+     * then with "snapshot not available" while processes start or exit; the snapshot is taken again then.
+     */
+    private fun descendantsOf(process: ProcessHandle): List<ProcessHandle> {
+        repeat(SNAPSHOT_ATTEMPTS - 1) {
+            try {
+                return process.descendants().toList()
+            } catch (e: RuntimeException) {
+                if (e.message != "snapshot not available") throw e
+                Thread.sleep(100)
+            }
+        }
+        return process.descendants().toList()
     }
 
     /**
@@ -216,6 +232,8 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
     companion object {
         /** Any password is accepted; this one is what the tests send. */
         const val PASSWORD = "secret"
+
+        private const val SNAPSHOT_ATTEMPTS = 5
 
         /** The CVS users of the repository (design decision 13). */
         val USERS = listOf("alice", "bob")

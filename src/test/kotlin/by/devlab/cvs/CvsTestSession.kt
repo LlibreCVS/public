@@ -8,7 +8,9 @@ import com.intellij.cvsSupport2.changeBrowser.CvsRepositoryLocation
 import com.intellij.cvsSupport2.checkinProject.CvsCheckinEnvironment
 import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration
 import com.intellij.cvsSupport2.config.CvsConfiguration
+import com.intellij.cvsSupport2.config.DateOrRevisionSettings
 import com.intellij.cvsSupport2.cvsoperations.cvsAdd.AddedFileInfo
+import com.intellij.cvsSupport2.cvsoperations.cvsLog.LogOperation
 import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.util.Ref
 import com.intellij.openapi.vcs.ProjectLevelVcsManager
@@ -209,6 +211,53 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         server.cvs("rtag", "-b", branch, module)
     }
 
+    /**
+     * Creates branch [branch] on the working copy [root] the way the Create Branch action does after OK in its dialog
+     * (design decision 17): the root as the selected file, "override existing" off, read-only setting from the
+     * configuration; with [switch] the working copy is then updated to the branch.
+     */
+    fun createBranch(project: Project, root: Path, branch: String, switch: Boolean) {
+        val readOnly = CvsConfiguration.getInstance(project).MAKE_NEW_FILES_READONLY
+        val selected = arrayOf(VcsUtil.getFilePath(virtualFile(root)))
+        run(CommandCvsHandler.createBranchHandler(selected, branch, switch, false, readOnly, project), project)
+        virtualFile(root).refresh(false, true)
+    }
+
+    /**
+     * The branch names the branch chooser offers for the working copy [root] (design decision 16): a header-only
+     * `log` through a [CommandCvsHandler], as the chooser's private `TagsHelper.collectAllBranches` runs it.
+     */
+    fun branches(project: Project, root: Path): Collection<String> {
+        val operation = LogOperation(listOf(VcsUtil.getFilePath(virtualFile(root))))
+        run(CommandCvsHandler("load tags", operation, true), project)
+        return operation.allBranches
+    }
+
+    /**
+     * The sticky tag CVS/Entries records for [file] (without its `T`), or "" when the file has none: on the trunk, or
+     * sticky to a date (`D...`) rather than a tag (design decision 15). A branch and a plain tag look the same here.
+     */
+    fun stickyTag(file: Path, charset: Charset = Charsets.UTF_8): String {
+        val sticky = entry(file, charset).split('/').getOrElse(5) { "" }
+        return if (sticky.startsWith("T")) sticky.substring(1) else ""
+    }
+
+    /** Every file of the working copy [root], CVS administrative files and merge backups (`.#name.revision`) left out. */
+    fun workingFiles(root: Path): List<Path> =
+        Files.walk(root).use { paths ->
+            paths.filter {
+                Files.isRegularFile(it) && it.parent.fileName.toString() != "CVS" && !it.fileName.toString().startsWith(".#")
+            }.toList().sorted()
+        }
+
+    /**
+     * Puts tag [tag] on [module] at [revisionOrBranch] (a branch tags its latest revisions) with the fixture's own
+     * `cvs rtag`, as a merge point (design decision 7).
+     */
+    fun tag(module: String, tag: String, revisionOrBranch: String) {
+        server.cvs("rtag", "-r", revisionOrBranch, tag, module)
+    }
+
     /** Deletes [file] from the working copy, schedules its removal through the plugin and commits it. */
     fun removeAndCommit(project: Project, file: Path, message: String) {
         Files.delete(file)
@@ -284,6 +333,65 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
         )
         session.exceptions.firstOrNull()?.let { throw it }
         virtualFile(root).refresh(false, true)
+    }
+
+    /**
+     * What the Update dialog sets on OK for a switch or a merge (design decision 8): [branch] is the "branch or tag"
+     * field (`-r`), [resetSticky] the reset-sticky option (`-A`), [merge1] and [merge2] the merge fields (`-j`, and a
+     * second `-j` with [merge2]).
+     */
+    data class UpdateOptions(
+        val branch: String? = null,
+        val resetSticky: Boolean = false,
+        val merge1: String? = null,
+        val merge2: String? = null,
+    )
+
+    /**
+     * Updates the working copy [root] the way the IDE does after OK in the Update dialog with [options] (design
+     * decisions 12, 13, 14) and returns the update result. CVS errors fail it; warnings do not, since a merge
+     * conflict must stay readable from the result (design decision 20).
+     */
+    fun updateWith(project: Project, root: Path, options: UpdateOptions = UpdateOptions()): UpdatedFiles {
+        // With both, the environment splits the update in two through its context; the IDE loops over that, the
+        // fixture does not (design decision 13).
+        require(options.branch == null || options.merge1 == null) { "a switch and a merge run as separate updates" }
+        require(options.merge2 == null || options.merge1 != null) { "a second merge point needs the first" }
+        val environment = CvsUpdateEnvironment(project)
+        val roots = listOf(VcsUtil.getFilePath(virtualFile(root)))
+        // What the IDE calls when it shows the Update dialog: without it, updateDirectories drops RESET_STICKY. It
+        // resets the flags itself, so the dialog's settings go in after it (design decision 12).
+        environment.createConfigurable(roots)
+        val configuration = CvsConfiguration.getInstance(project)
+        val previousRevision = configuration.UPDATE_DATE_OR_REVISION_SETTINGS
+        val previousMerge = Triple(configuration.MERGING_MODE, configuration.MERGE_WITH_BRANCH1_NAME, configuration.MERGE_WITH_BRANCH2_NAME)
+        val updated = UpdatedFiles.create()
+        try {
+            configuration.UPDATE_DATE_OR_REVISION_SETTINGS = DateOrRevisionSettings().apply {
+                if (options.branch != null) {
+                    USE_BRANCH = true
+                    BRANCH = options.branch
+                }
+            }
+            configuration.RESET_STICKY = options.resetSticky
+            if (options.merge1 != null) {
+                configuration.MERGING_MODE =
+                    if (options.merge2 == null) CvsConfiguration.MERGE_WITH_BRANCH else CvsConfiguration.MERGE_TWO_BRANCHES
+                configuration.MERGE_WITH_BRANCH1_NAME = options.merge1
+                if (options.merge2 != null) configuration.MERGE_WITH_BRANCH2_NAME = options.merge2
+            }
+            val session = environment.updateDirectories(roots.toTypedArray(), updated, EmptyProgressIndicator(), Ref())
+            // The session's onRefreshFilesCompleted is not called: it would open the merge dialog (design decision 14).
+            session.exceptions.firstOrNull { !it.isWarning }?.let { throw it }
+        } finally {
+            configuration.UPDATE_DATE_OR_REVISION_SETTINGS = previousRevision
+            configuration.RESET_STICKY = false
+            configuration.MERGING_MODE = previousMerge.first
+            configuration.MERGE_WITH_BRANCH1_NAME = previousMerge.second
+            configuration.MERGE_WITH_BRANCH2_NAME = previousMerge.third
+        }
+        virtualFile(root).refresh(false, true)
+        return updated
     }
 
     /** The revision CVS/Entries records for [file], read in [charset]. */
