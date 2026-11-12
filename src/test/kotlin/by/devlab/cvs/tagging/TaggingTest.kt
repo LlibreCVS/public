@@ -104,7 +104,7 @@ class TaggingTest {
 
         assertEquals("1.3", session.tagOf("tag-deleted/one.txt", "TEST"))
         assertEquals("1.2", session.tagOf("tag-deleted/two.txt", "TEST"))
-        assertEquals(TagResult("TEST", 1, emptyList(), emptyList(), null), result)
+        assertEquals(TagResult("TEST", 1, emptyList(), emptyList(), null, keptRemoved = 1), result)
     }
 
     @Test

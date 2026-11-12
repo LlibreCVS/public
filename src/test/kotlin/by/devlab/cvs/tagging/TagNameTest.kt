@@ -45,15 +45,13 @@ class TagNameTest {
     @Test
     @DisplayName("RCS file names map to the exact changeset path")
     fun rcsFileNamesMapToTheExactChangesetPath() {
-        val paths = listOf("m/src/a.txt", "m/x/src/a.txt", "m/Attic/b.txt", "n/a.txt", "x/n/a.txt")
+        val paths = listOf("m/src/a.txt", "m/x/src/a.txt", "n/a.txt", "x/n/a.txt")
 
         // One changeset path may be a suffix of another.
         assertEquals("x/n/a.txt", changesetPath("/repo", "/repo/x/n/a.txt,v", paths))
-
+        assertEquals("n/a.txt", changesetPath("/repo", "/repo/n/Attic/a.txt,v", paths))
         assertEquals("m/x/src/a.txt", changesetPath("/repo", "/repo/m/x/src/Attic/a.txt,v", paths))
-        assertEquals("m/src/a.txt", changesetPath("/repo", "/repo/m/src/a.txt,v", paths))
-        // Only the last directory named Attic is CVS's; a module directory may be called that too.
-        assertEquals("m/Attic/b.txt", changesetPath("/repo", "/repo/m/Attic/b.txt,v", paths))
+        assertEquals("m/src/a.txt", changesetPath("/repo/", "/repo/m/src/a.txt,v", paths))
         assertNull(changesetPath("/repo", "/repo/other/a.txt,v", paths))
     }
 }

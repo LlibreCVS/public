@@ -5,6 +5,7 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.DumbAwareAction
@@ -22,7 +23,7 @@ fun interface TagRequestSource {
 
 /** The real source: the Put on Tag dialog. */
 private val DIALOG = TagRequestSource { project, changeset ->
-    val dialog = PutOnTagDialog(project, changeset.fileRevisions.map { it.path() })
+    val dialog = PutOnTagDialog(project, changeset.fileRevisions.map { it.path() }.distinct())
     if (dialog.showAndGet()) TagRequest(dialog.tagName, dialog.moveExisting) else null
 }
 
@@ -44,7 +45,14 @@ class PutOnTagAction(private val requests: TagRequestSource = DIALOG) : DumbAwar
         val request = requests.ask(project, changeset) ?: return
         object : Task.Backgroundable(project, "Putting tag ${request.tag}", false) {
             override fun run(indicator: ProgressIndicator) {
-                notify(project, ChangesetTagger(project).tag(changeset, request.tag, request.move))
+                val result = try {
+                    ChangesetTagger(project).tag(changeset, request.tag, request.move)
+                } catch (e: ProcessCanceledException) {
+                    throw e
+                } catch (e: Exception) {
+                    TagResult(request.tag, 0, emptyList(), emptyList(), e.message ?: e.toString())
+                }
+                notify(project, result)
             }
         }.queue()
     }
@@ -56,6 +64,7 @@ class PutOnTagAction(private val requests: TagRequestSource = DIALOG) : DumbAwar
     }
 
     private fun notify(project: Project, result: TagResult) {
+        val kept = if (result.keptRemoved > 0) "\n${files(result.keptRemoved)} removed on the trunk kept their tags" else ""
         val (type, title, content) = when {
             result.error != null ->
                 Triple(NotificationType.ERROR, "Tag ${result.tag} was not set", result.error)
@@ -63,19 +72,20 @@ class PutOnTagAction(private val requests: TagRequestSource = DIALOG) : DumbAwar
                 Triple(
                     NotificationType.WARNING,
                     "Tag ${result.tag}: the server left files unchanged",
-                    result.unchangedMessages.joinToString("\n"),
+                    // The count is of files that did get the tag; the warning never says the tag is set.
+                    "${files(result.taggedCount)} tagged.$kept\n" + result.unchangedMessages.joinToString("\n"),
                 )
+            result.taggedCount == 0 ->
+                Triple(NotificationType.WARNING, "Tag ${result.tag} was not set", "No file of the commit is on the trunk any more.$kept")
             else ->
-                Triple(
-                    NotificationType.INFORMATION,
-                    "Put on Tag",
-                    "Tag ${result.tag} set on ${result.taggedCount} ${if (result.taggedCount == 1) "file" else "files"}",
-                )
+                Triple(NotificationType.INFORMATION, "Put on Tag", "Tag ${result.tag} set on ${files(result.taggedCount)}$kept")
         }
         NotificationGroupManager.getInstance().getNotificationGroup(GROUP)
             .createNotification(title, StringUtil.escapeXmlEntities(content).replace("\n", "<br>"), type)
             .notify(project)
     }
+
+    private fun files(count: Int) = "$count ${if (count == 1) "file" else "files"}"
 
     companion object {
         const val GROUP = "IntelliJCVS"

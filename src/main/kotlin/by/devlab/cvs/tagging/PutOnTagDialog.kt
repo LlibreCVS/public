@@ -17,11 +17,15 @@ fun validateTagName(name: String): String? {
         tag.isEmpty() -> "Enter a tag name"
         tag.first() !in 'A'..'Z' && tag.first() !in 'a'..'z' -> "A tag name must start with a Latin letter"
         !TAG_NAME.matches(tag) -> "A tag name may contain only Latin letters, digits, '-' and '_'"
+        tag in RESERVED -> "$tag is a name CVS reserves for itself"
         else -> null
     }
 }
 
 private val TAG_NAME = Regex("[A-Za-z][A-Za-z0-9_-]*")
+
+/** Names CVS refuses as tags ("Attempt to add reserved tag name"). */
+private val RESERVED = setOf("HEAD", "BASE")
 
 /**
  * Asks for the tag to put on a changeset: the tag name, "Move tag if it already exists" (checked by default,

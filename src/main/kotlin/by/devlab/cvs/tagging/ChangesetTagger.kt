@@ -40,6 +40,8 @@ data class TagResult(
     val notMoved: List<String>,
     val unchangedMessages: List<String>,
     val error: String?,
+    /** Files of the changeset removed on the trunk: left out of the `rtag`, they keep their tags (decision 23). */
+    val keptRemoved: Int = 0,
 )
 
 /**
@@ -47,8 +49,17 @@ data class TagResult(
  * `/repository/module/Attic/file.txt,v`) of the repository [repository] is, or null if none.
  */
 internal fun changesetPath(repository: String, rcsFile: String, paths: List<String>): String? {
-    val name = rcsFile.replace('\\', '/').removeSuffix(",v").replace("/Attic/", "/")
-    return paths.firstOrNull { name.endsWith("/$it") }
+    var name = rcsFile.replace('\\', '/').removeSuffix(",v")
+    // A removed file lives in the Attic directory next to it; only that last directory is CVS's, as upstream's
+    // RevisionWrapper strips it.
+    val slash = name.lastIndexOf('/')
+    if (slash >= 0 && name.substring(0, slash).endsWith("/Attic")) {
+        name = name.substring(0, slash - "/Attic".length) + name.substring(slash)
+    }
+    val root = repository.replace('\\', '/').trimEnd('/') + "/"
+    if (name.startsWith(root)) return name.removePrefix(root).takeIf { it in paths }
+    // A server that names the RCS file in another form: the longest changeset path it ends with.
+    return paths.filter { name.endsWith("/$it") }.maxByOrNull { it.length }
 }
 
 /**
@@ -66,12 +77,13 @@ class ChangesetTagger(private val project: Project?) {
         val lookup = run(heads)
         lookup.failure(emptyList())?.let { return TagResult(tag, 0, emptyList(), emptyList(), it) }
         val alive = paths.filterNot { it in heads.removed }
-        if (alive.isEmpty()) return TagResult(tag, 0, emptyList(), emptyList(), null)
+        val keptRemoved = paths.size - alive.size
+        if (alive.isEmpty()) return TagResult(tag, 0, emptyList(), emptyList(), null, keptRemoved)
 
         val tagging = run(RtagOperation(changeset.environment, alive, tag, move))
         val unchanged = tagging.messages.filter { unchangedFile(it) != null }
         val notMoved = unchanged.mapNotNull { unchangedFile(it) }.distinct()
-        return TagResult(tag, alive.size - notMoved.size, notMoved, unchanged, tagging.failure(unchanged))
+        return TagResult(tag, alive.size - notMoved.size, notMoved, unchanged, tagging.failure(unchanged), keptRemoved)
     }
 
     /** What one CVS operation produced: every server message, its error messages, and its failure, if any. */
@@ -88,7 +100,7 @@ class ChangesetTagger(private val project: Project?) {
         }
     }
 
-    private fun run(operation: LocalPathIndifferentOperation): Outcome {
+    private fun run(operation: TaggerOperation): Outcome {
         val handler = CommandCvsHandler("Put on Tag", operation, false)
         val messages = mutableListOf<String>()
         val errors = mutableListOf<String>()
@@ -105,7 +117,29 @@ class ChangesetTagger(private val project: Project?) {
         val executor = CvsOperationExecutor(false, project, ModalityState.nonModal())
         executor.setShowErrors(false)
         executor.performActionSync(handler, CvsOperationExecutorCallback.EMPTY)
-        return Outcome(messages, errors, if (executor.hasNoErrors()) null else executor.firstError.message)
+        val failure = when {
+            !executor.hasNoErrors() -> executor.firstError.message ?: "${operation.name} failed"
+            // The handler skips the command without an error when the root is offline or the login fails.
+            !operation.executed -> "${operation.name} did not run: CVS root ${operation.root} is offline or the login failed"
+            else -> null
+        }
+        return Outcome(messages, errors, failure)
+    }
+
+    /** An operation on repository paths that records whether its command was actually created and run. */
+    private abstract class TaggerOperation(environment: CvsEnvironment) : LocalPathIndifferentOperation(environment) {
+        @Volatile
+        var executed = false
+
+        val name: String get() = operationName
+        val root: String get() = myEnvironment.cvsRootAsString
+
+        final override fun createCommand(root: CvsRootProvider, environment: CvsExecutionEnvironment): Command {
+            executed = true
+            return command()
+        }
+
+        abstract fun command(): Command
     }
 
     /** The repository path of the file a server message says was left unchanged, or null for any other message. */
@@ -121,10 +155,10 @@ class ChangesetTagger(private val project: Project?) {
         paths: List<String>,
         private val tag: String,
         private val move: Boolean,
-    ) : LocalPathIndifferentOperation(environment) {
+    ) : TaggerOperation(environment) {
         private val helper = LocalPathIndifferentOperationHelper().apply { paths.forEach { addFile(File(it)) } }
 
-        override fun createCommand(root: CvsRootProvider, environment: CvsExecutionEnvironment): Command =
+        override fun command(): Command =
             RtagCommand(tag).apply {
                 helper.addFilesTo(this)
                 setOverrideExistings(move)
@@ -138,12 +172,11 @@ class ChangesetTagger(private val project: Project?) {
      * that files whose trunk head is dead are known before tagging (design decision 23).
      */
     private class HeadStateOperation(environment: CvsEnvironment, private val paths: List<String>) :
-        LocalPathIndifferentOperation(environment) {
+        TaggerOperation(environment) {
         /** The [paths] whose latest revision is a removal. */
         val removed = mutableSetOf<String>()
 
-        override fun createCommand(root: CvsRootProvider, environment: CvsExecutionEnvironment): Command =
-            HeadStateCommand(paths)
+        override fun command(): Command = HeadStateCommand(paths)
 
         override fun getOperationName(): String = "rlog"
 
@@ -180,7 +213,7 @@ class ChangesetTagger(private val project: Project?) {
 
     private companion object {
         /** "cvs rtag: cannot find module `module/file.txt' - ignored" (also from rlog and from `cvs server`). */
-        val CANNOT_FIND = Regex("""cvs [^:]+: cannot find module `.+' - ignored""")
+        val CANNOT_FIND = Regex("""\S+ [^:]+: cannot find module `.+' - ignored""")
 
         /** cvs 1.11 messages about a file left unchanged; group 1 is the file's repository path. */
         val UNCHANGED = listOf(
