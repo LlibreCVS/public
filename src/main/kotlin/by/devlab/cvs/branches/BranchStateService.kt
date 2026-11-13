@@ -50,25 +50,48 @@ class BranchStateService(private val project: Project) : Disposable {
     /** What the indicator shows: [text], [tooltip] (lines separated by `\n`) and the [state] of the shown root. */
     data class Indicator(val text: String, val tooltip: String, val state: BranchState)
 
-    /** Recomputations run one after another on this executor. */
-    private val executor = AppExecutorUtil.createBoundedScheduledExecutorService("CVS branch state", 1)
+    /**
+     * The root states are recomputed one after another on [stateExecutor]; the mixed scans run on [scanExecutor], so
+     * that a state never waits for a scan (design decision 7).
+     */
+    private val stateExecutor = AppExecutorUtil.createBoundedScheduledExecutorService("CVS branch state", 1)
+    private val scanExecutor = AppExecutorUtil.createBoundedScheduledExecutorService("CVS branch mixed scan", 1)
 
     private val lock = Any()
 
-    /** Work requested since the last recomputation started; guarded by [lock]. */
+    /** State work requested since the last state recomputation started; guarded by [lock]. */
     private var rediscoverRequested = false
     private var scanAllRequested = false
     private val changedPaths = LinkedHashSet<Path>()
     private var scheduled: Future<*>? = null
 
-    /** The last recomputation submitted to [executor]; guarded by [lock]. */
+    /** The last state recomputation submitted to [stateExecutor]; guarded by [lock]. */
     private var last: Future<*>? = null
+
+    /** Roots to scan since the last scan started, the pending scan and the last one submitted; guarded by [lock]. */
+    private val scanRequested = LinkedHashSet<Path>()
+    private var scanScheduled: Future<*>? = null
+    private var lastScan: Future<*>? = null
+
+    /**
+     * Bumped by every state request: a running scan whose generation is no longer current stops and is repeated, so
+     * that its result never lands on a newer state.
+     */
+    @Volatile
+    private var generation = 0L
+
+    /** Serializes the updates of [cache] from the two executors. */
+    private val cacheLock = Any()
 
     @Volatile
     private var cache: List<Root> = emptyList()
 
-    /** The root directories found at the last discovery, or null before the first one. Used on [executor] only. */
+    /** The root directories found at the last discovery, or null before the first one. Used on [stateExecutor] only. */
     private var rootPaths: List<Path>? = null
+
+    /** The directories mapped to CVS at the last discovery; only events below them can change the roots. */
+    @Volatile
+    private var mappedDirs: List<Path> = emptyList()
 
     @Volatile
     private var disposed = false
@@ -98,13 +121,14 @@ class BranchStateService(private val project: Project) : Disposable {
     /**
      * Turns VFS events into recomputations (design decision 11): a changed `CVS/Tag`, `CVS/Entries` or
      * `CVS/Entries.Log` recomputes the root that holds it; a `CVS` directory or its `Root` or `Repository` file
-     * created, deleted or moved finds the roots again. Runs on the thread that applies the events, so it only looks
-     * at the paths.
+     * created, deleted or moved inside the CVS mappings finds the roots again. Runs on the thread that applies the
+     * events, so it only looks at the paths.
      */
     private fun onFileEvents(events: List<VFileEvent>) {
         if (disposed) return
         var rediscover = false
         val changed = ArrayList<Path>()
+        val mapped = mappedDirs
         for (event in events) {
             val paths = if (event is VFileMoveEvent) listOf(event.oldPath, event.path) else listOf(event.path)
             for (eventPath in paths) {
@@ -112,13 +136,23 @@ class BranchStateService(private val project: Project) : Disposable {
                 val parentName = eventPath.substringBeforeLast('/', "").substringAfterLast('/')
                 when {
                     name == "CVS" && event !is VFileContentChangeEvent -> {
-                        rediscover = true
-                        pathOf(eventPath.substringBeforeLast('/', ""))?.let { changed.add(it) }
+                        // The VFS reports every file system the IDE sees; only the project's mappings matter.
+                        val dir = pathOf(eventPath.substringBeforeLast('/', ""))
+                        if (dir != null && mapped.any { dir.startsWith(it) }) {
+                            rediscover = true
+                            changed.add(dir)
+                        }
                     }
                     parentName == "CVS" && name in STATE_FILES -> {
                         pathOf(eventPath.substringBeforeLast('/').substringBeforeLast('/', ""))?.let { changed.add(it) }
                     }
-                    parentName == "CVS" && name in ROOT_FILES && event !is VFileContentChangeEvent -> rediscover = true
+                    parentName == "CVS" && name in ROOT_FILES && event !is VFileContentChangeEvent -> {
+                        val dir = pathOf(eventPath.substringBeforeLast('/').substringBeforeLast('/', ""))
+                        if (dir != null && mapped.any { dir.startsWith(it) }) {
+                            rediscover = true
+                            changed.add(dir)
+                        }
+                    }
                     event is VFileDeleteEvent || event is VFileMoveEvent ->
                         // A deleted or moved directory may hold roots.
                         pathOf(eventPath)?.let { path -> if (cache.any { it.path.startsWith(path) }) rediscover = true }
@@ -170,26 +204,48 @@ class BranchStateService(private val project: Project) : Disposable {
     /** Waits until no recomputation is pending or running (test hook, design decision 16). */
     fun awaitRefresh() {
         while (true) {
-            val future = synchronized(lock) { scheduled ?: last } ?: return
-            future.get(30, TimeUnit.SECONDS)
-            synchronized(lock) { if (scheduled == null && last === future) return }
+            val futures = synchronized(lock) { listOfNotNull(scheduled ?: last, scanScheduled ?: lastScan) }
+            futures.forEach { it.get(30, TimeUnit.SECONDS) }
+            synchronized(lock) {
+                val idle = scheduled == null && scanScheduled == null &&
+                    last?.isDone != false && lastScan?.isDone != false
+                if (idle) return
+            }
         }
     }
 
     private fun request(rediscover: Boolean, scanAll: Boolean, paths: Collection<Path>) {
         if (disposed) return
         synchronized(lock) {
+            generation++
             rediscoverRequested = rediscoverRequested || rediscover
             scanAllRequested = scanAllRequested || scanAll
             changedPaths += paths
             if (scheduled == null) {
-                val future = executor.schedule(::recompute, DEBOUNCE_MILLIS, TimeUnit.MILLISECONDS)
+                val future = stateExecutor.schedule(::recompute, DEBOUNCE_MILLIS, TimeUnit.MILLISECONDS)
                 scheduled = future
                 last = future
             }
         }
     }
 
+    /** Schedules a mixed scan of the roots at [roots]. */
+    private fun requestScan(roots: Collection<Path>) {
+        if (disposed || roots.isEmpty()) return
+        synchronized(lock) {
+            scanRequested += roots
+            if (scanScheduled == null) {
+                val future = scanExecutor.schedule(::scan, DEBOUNCE_MILLIS, TimeUnit.MILLISECONDS)
+                scanScheduled = future
+                lastScan = future
+            }
+        }
+    }
+
+    /**
+     * Reads the state of every root and publishes it at once (design decision 7); the roots whose files changed, whose
+     * state changed or that are new are then scanned for mixed files on [scanExecutor].
+     */
     private fun recompute() {
         val (rediscover, scanAll, paths) = synchronized(lock) {
             scheduled = null
@@ -204,26 +260,72 @@ class BranchStateService(private val project: Project) : Disposable {
             val known = rootPaths
             val discovered = if (rediscover || known == null) discoverRoots() else known
             rootPaths = discovered
-            val previous = cache.associateBy { it.path }
-            // The states first, so that they never wait for the mixed scan (design decision 7).
-            var roots = discovered.map { path ->
-                Root(path, path.fileName?.toString() ?: path.toString(), RootStatus(BranchState.read(path), previous[path]?.status?.mixedFiles ?: 0))
-            }
-            publish(roots)
-            val toScan = roots.filter { root ->
-                scanAll || rediscover || root.path !in previous || paths.any { it.startsWith(root.path) }
-            }
-            roots = roots.map { root ->
-                if (root !in toScan || disposed) return@map root
-                root.copy(status = root.status.copy(mixedFiles = MixedScan.count(root.path) { onScanDirectory(it); watch(it) }))
+            val states = discovered.map { it to BranchState.read(it) }
+            var toScan: List<Path> = emptyList()
+            update { current ->
+                val previous = current.associateBy { it.path }
+                val roots = states.map { (path, state) ->
+                    // A count made for another state says nothing about this one: 0 until the scan is done.
+                    val kept = previous[path]?.status?.takeIf { it.state == state }?.mixedFiles ?: 0
+                    Root(path, path.fileName?.toString() ?: path.toString(), RootStatus(state, kept))
+                }
+                toScan = roots.filter { root ->
+                    val before = previous[root.path]
+                    scanAll || before == null || before.status.state != root.status.state ||
+                        paths.any { it.startsWith(root.path) }
+                }.map { it.path }
+                roots
             }
             // The roots not scanned now still need their own CVS directory watched, e.g. after a rediscovery.
-            roots.filter { it !in toScan }.forEach { watch(it.path) }
-            publish(roots)
+            discovered.filter { it !in toScan }.forEach { watch(it) }
+            requestScan(toScan)
         } catch (e: Exception) {
             LOG.warn("Cannot compute the CVS branch state", e)
         }
     }
+
+    /**
+     * Counts the mixed files of the requested roots and publishes each count. A state request made meanwhile stops the
+     * scan, which is then repeated for the roots it did not finish.
+     */
+    private fun scan() {
+        val (roots, scanGeneration) = synchronized(lock) {
+            scanScheduled = null
+            (scanRequested.toList() to generation).also { scanRequested.clear() }
+        }
+        for ((index, root) in roots.withIndex()) {
+            if (disposed || project.isDisposed) return
+            val count = try {
+                MixedScan.count(root) { dir ->
+                    onScanDirectory(dir)
+                    if (disposed || generation != scanGeneration) throw ScanStopped()
+                    watch(dir)
+                }
+            } catch (_: ScanStopped) {
+                requestScan(roots.drop(index))
+                return
+            } catch (e: Exception) {
+                LOG.warn("Cannot scan the CVS working copy $root for mixed files", e)
+                continue
+            }
+            var stale = false
+            update { current ->
+                if (generation != scanGeneration) {
+                    stale = true
+                    current
+                } else {
+                    current.map { if (it.path == root) it.copy(status = it.status.copy(mixedFiles = count)) else it }
+                }
+            }
+            if (stale) {
+                requestScan(roots.drop(index))
+                return
+            }
+        }
+    }
+
+    /** Thrown inside a mixed scan to stop it. */
+    private class ScanStopped : RuntimeException(null, null, false, false)
 
     /**
      * Loads the children of the working-copy directory [dir] and of its `CVS` directory into the VFS, which reports
@@ -235,6 +337,11 @@ class BranchStateService(private val project: Project) : Disposable {
         val directory = fileSystem.findFileByNioFile(dir) ?: return
         directory.children
         directory.findChild("CVS")?.children
+    }
+
+    /** Replaces the cache with [transform] of it and tells the listeners; the two executors never interleave here. */
+    private fun update(transform: (List<Root>) -> List<Root>) {
+        synchronized(cacheLock) { publish(transform(cache)) }
     }
 
     private fun publish(roots: List<Root>) {
@@ -261,6 +368,7 @@ class BranchStateService(private val project: Project) : Disposable {
         val mapped = ProjectLevelVcsManager.getInstance(project).directoryMappings
             .filter { it.vcs == vcsName }
             .mapNotNull { mapping -> pathOf(mapping.directory.ifEmpty { project.basePath.orEmpty() }) }
+        mappedDirs = mapped
         val roots = sortedSetOf<Path>(compareBy { it.toString() })
         for (dir in mapped) {
             if (TrackedDirectories.isWorkingCopyDirectory(dir)) roots.add(dir) else roots.addAll(workingCopiesBelow(dir))
@@ -298,7 +406,10 @@ class BranchStateService(private val project: Project) : Disposable {
 
     override fun dispose() {
         disposed = true
-        synchronized(lock) { scheduled?.cancel(false) }
+        synchronized(lock) {
+            scheduled?.cancel(false)
+            scanScheduled?.cancel(false)
+        }
     }
 
     companion object {

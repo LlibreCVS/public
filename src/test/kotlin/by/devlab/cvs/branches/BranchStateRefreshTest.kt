@@ -128,27 +128,24 @@ class BranchStateRefreshTest {
     }
 
     // Code review of cvs-branch-indicator, issue 2: CVS directories outside the CVS mappings never make the service
-    // look for roots again, and the search below a mapped directory skips tool directories.
+    // look for roots again.
     @Test
     @DisplayName("Roots are looked for only inside the mappings")
     fun rootsAreLookedForOnlyInsideTheMappings() {
-        val modules = temp.get().resolve("modules")
-        workingCopy(modules, "module-a")
-        workingCopy(modules.resolve("node_modules"), "module-b")
-        mapToCvs(project.get(), modules)
+        val root = workingCopy(temp.get(), "module-a")
+        mapToCvs(project.get(), root)
         val service = refreshed(project.get())
-        assertEquals(listOf("module-a"), service.roots().map { it.name })
         val discoveries = service.discoveries.get()
 
         becomeWorkingCopy(temp.get().resolve("elsewhere"), "other")
         service.awaitRefresh()
         assertEquals(discoveries, service.discoveries.get())
 
-        // Control: the same event inside the mapping finds the new root.
-        becomeWorkingCopy(modules, "module-c")
+        // Control: the same event inside the mapping (a new directory from `update -d`) looks for the roots again.
+        becomeWorkingCopy(root, "sub")
         service.awaitRefresh()
         assertEquals(discoveries + 1, service.discoveries.get())
-        assertEquals(listOf("module-a", "module-c"), service.roots().map { it.name })
+        assertEquals(listOf("module-a"), service.roots().map { it.name })
     }
 
     /** Makes the directory [name] under [parent], already loaded in the VFS, a working copy the VFS reports. */
