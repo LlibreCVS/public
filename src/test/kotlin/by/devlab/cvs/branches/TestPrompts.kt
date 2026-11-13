@@ -8,6 +8,7 @@ class TestPrompts(
     var newBranch: NewBranchRequest? = null,
     var existing: ExistingBranchChoice = ExistingBranchChoice.CANCEL,
     var confirmRecreate: Boolean = false,
+    var partial: PartialBranchChoice = PartialBranchChoice.SWITCH,
 ) : BranchPrompts {
 
     /** The questions asked, as text. */
@@ -19,6 +20,16 @@ class TestPrompts(
         asked += "switch to $target: $changes"
         onAsk()
         return confirmSwitch
+    }
+
+    override fun confirmPartialBranch(
+        project: Project,
+        branch: String,
+        coverage: Map<String, BranchListService.Coverage>,
+    ): PartialBranchChoice {
+        asked += "partial $branch: ${coverage.mapValues { (_, it) -> "${it.files} of ${it.total}" }}"
+        onAsk()
+        return partial
     }
 
     override fun askNewBranch(project: Project, roots: List<String>): NewBranchRequest? {

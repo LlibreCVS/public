@@ -36,8 +36,24 @@ fun interface BranchListListener {
 @State(name = "IntelliJCVS.BranchLists", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
 class BranchListService(private val project: Project) : PersistentStateComponent<BranchListService.ListsState>, Disposable {
 
-    /** A root's remembered [branches], sorted, and when they were loaded from the server ([loadedAt], epoch millis). */
-    data class BranchList(val branches: List<String>, val loadedAt: Long)
+    /**
+     * A root's remembered [branches], sorted, and when they were loaded from the server ([loadedAt], epoch millis);
+     * [files] is the number of the root's files and [coverage] the number of them carrying each branch (design
+     * decision 20). Absent counts (a branch made through New Branch…, a list remembered before the counts) mean the
+     * whole root.
+     */
+    data class BranchList(
+        val branches: List<String>,
+        val loadedAt: Long,
+        val files: Int? = null,
+        val coverage: Map<String, Int> = emptyMap(),
+    ) {
+        /** How much of the root [branch] covers when it covers only part of it, or null for the whole root. */
+        fun partial(branch: String): Coverage? = null
+    }
+
+    /** A branch carried by [files] of the root's [total] files. */
+    data class Coverage(val files: Int, val total: Int)
 
     /** The persistent state: one entry per root. */
     class ListsState {
@@ -131,8 +147,8 @@ class BranchListService(private val project: Project) : PersistentStateComponent
     }
 
     /** Sets [root]'s list (test hook). */
-    internal fun set(root: Path, branches: Collection<String>, loadedAt: Long) {
-        synchronized(lock) { lists[key(root)] = BranchList(branches.distinct().sorted(), loadedAt) }
+    internal fun set(root: Path, branches: Collection<String>, loadedAt: Long, files: Int? = null, coverage: Map<String, Int> = emptyMap()) {
+        synchronized(lock) { lists[key(root)] = BranchList(branches.distinct().sorted(), loadedAt, files, coverage) }
         publish()
     }
 

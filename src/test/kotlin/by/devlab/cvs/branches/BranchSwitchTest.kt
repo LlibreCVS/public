@@ -41,6 +41,7 @@ class BranchSwitchTest {
 
         const val ONE = "one.txt"
         const val TWO = "dir/two.txt"
+        const val GONE = "gone.txt"
     }
 
     private val project = projectFixture(tempPathFixture(), openAfterCreation = true)
@@ -210,7 +211,103 @@ class BranchSwitchTest {
         assertSticky(b, "BR_RELEASE")
     }
 
+    @Test
+    @DisplayName("Partial branch confirmed")
+    fun partialBranchConfirmed() {
+        val (a, _) = partialRoots("partial")
+        TestData.edit(a.resolve(TWO), "two, alice's edit\n".toByteArray())
+        val stickyWhenAsked = mutableListOf<String>()
+        prompts.onAsk = { stickyWhenAsked += session.stickyTag(a.resolve(TWO)) }
+
+        val report = switcher().switch(SwitchTarget.Branch("BR_SUB"), listOf(a))
+
+        println("${prompts.asked}\n${report?.text()}")
+        // The partial branch is asked first, then the uncommitted changes (design decision 20).
+        assertEquals(listOf("partial BR_SUB: {${a.fileName}=1 of 2}", "switch to BR_SUB: {${a.fileName}=1}"), prompts.asked)
+        assertEquals(listOf("", ""), stickyWhenAsked, "nothing is switched before the answers")
+        assertSticky(a, "BR_SUB")
+        assertFalse(Files.exists(a.resolve(ONE)), "a file without the branch leaves the working copy")
+    }
+
+    // Review focus: a branch on part of a root keeps the other files unless confirmed.
+    @Test
+    @DisplayName("Partial root skipped")
+    fun partialRootSkipped() {
+        val (a, b) = partialRoots("skip")
+        val filesBefore = session.workingFiles(a)
+        prompts.partial = PartialBranchChoice.SKIP
+
+        val report = switcher().switch(SwitchTarget.Branch("BR_SUB"), listOf(a, b))
+
+        println("${prompts.asked}\n${report?.text()}")
+        // module-b's removed file (in the Attic) is not one of its files: BR_SUB covers all of module-b.
+        assertEquals(listOf("partial BR_SUB: {${a.fileName}=1 of 2}"), prompts.asked)
+        assertSticky(b, "BR_SUB")
+        assertEquals(filesBefore, session.workingFiles(a))
+        assertSticky(a, "")
+        assertEquals(listOf(b.fileName.toString()), report!!.switched)
+        assertEquals(listOf(a.fileName.toString() to "branch covers only part of the root"), report.skipped)
+    }
+
+    @Test
+    @DisplayName("Partial switch cancelled")
+    fun partialSwitchCancelled() {
+        val (a, b) = partialRoots("partialcancel")
+        val filesBefore = session.workingFiles(a)
+        prompts.partial = PartialBranchChoice.CANCEL
+
+        val report = switcher().switch(SwitchTarget.Branch("BR_SUB"), listOf(a, b))
+
+        println(prompts.asked)
+        assertEquals(1, prompts.asked.size, "${prompts.asked}")
+        assertEquals(null, report)
+        assertEquals(filesBefore, session.workingFiles(a))
+        assertSticky(a, "")
+        assertSticky(b, "")
+    }
+
+    @Test
+    @DisplayName("Branch without counts covers the root")
+    fun branchWithoutCountsCoversTheRoot() {
+        val (a, _) = partialRoots("nocounts")
+        // A list without counts: remembered before the counts, or a branch made through New Branch….
+        BranchListService.getInstance(project.get()).set(a, listOf("BR_SUB"), System.currentTimeMillis())
+
+        switcher().switch(SwitchTarget.Branch("BR_SUB"), listOf(a))
+
+        assertEquals(emptyList<String>(), prompts.asked)
+        assertSticky(a, "BR_SUB")
+    }
+
     private fun switcher() = BranchSwitcher(project.get(), prompts)
+
+    /**
+     * Two modules `<prefix>-a` and `<prefix>-b` with [ONE] and [TWO], checked out as alice and mapped to CVS;
+     * `<prefix>-b` also had `gone.txt`, removed on the trunk before branching (a file in the Attic). `BR_SUB` is branched
+     * on `<prefix>-a/dir` only and on all of `<prefix>-b`; both lists are loaded from the server.
+     */
+    private fun partialRoots(prefix: String): Pair<Path, Path> {
+        val parent = session.newDirectory("$prefix-wc")
+        val (a, b) = listOf("$prefix-a", "$prefix-b").map { module ->
+            val seed = session.newDirectory("$module-seed")
+            TestData.write(seed.resolve(ONE), "one\n".toByteArray())
+            TestData.write(seed.resolve(TWO), "two\n".toByteArray())
+            if (module.endsWith("-b")) TestData.write(seed.resolve(GONE), "gone\n".toByteArray())
+            session.importModule("alice", seed, module)
+            session.checkout("alice", module, parent)
+        }
+        session.mapToCvs(project.get(), a, b)
+        refreshed(project.get())
+        session.removeAndCommit(project.get(), b.resolve(GONE), "alice removes gone")
+        session.branch("${a.fileName}/dir", "BR_SUB")
+        session.branch(b.fileName.toString(), "BR_SUB")
+        val lists = BranchListService.getInstance(project.get())
+        lists.load(listOf(a, b))
+        lists.awaitLoad()
+        println("lists: ${lists.list(a)}, ${lists.list(b)}")
+        refreshed(project.get())
+        return a to b
+    }
 
     /**
      * Two modules `<prefix>-a` and `<prefix>-b` with [ONE] and [TWO], [branches] made on both, checked out side by side

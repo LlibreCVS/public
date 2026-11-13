@@ -9,6 +9,7 @@ import com.intellij.util.xmlb.XmlSerializer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -61,7 +62,7 @@ class BranchListTest {
         val root = temp.get().resolve("module-a")
         val backslash = Path.of(root.toString().replace('/', '\\'))
         val service = BranchListService(project.get())
-        service.set(backslash, listOf("BR_RELEASE", "BR_FIX"), 1_700_000_000_000L)
+        service.set(backslash, listOf("BR_RELEASE", "BR_FIX"), 1_700_000_000_000L, files = 5, coverage = mapOf("BR_FIX" to 2, "BR_RELEASE" to 5))
 
         val stored = XmlSerializer.serialize(service.state)
         println("stored state: ${com.intellij.openapi.util.JDOMUtil.write(stored)}")
@@ -72,6 +73,9 @@ class BranchListTest {
         assertNotNull(list)
         assertEquals(listOf("BR_FIX", "BR_RELEASE"), list!!.branches)
         assertEquals(1_700_000_000_000L, list.loadedAt)
+        // The file counts survive too (design decision 20): BR_FIX covers part of the root, BR_RELEASE all of it.
+        assertEquals(BranchListService.Coverage(2, 5), list.partial("BR_FIX"))
+        assertNull(list.partial("BR_RELEASE"))
     }
 
     @Test

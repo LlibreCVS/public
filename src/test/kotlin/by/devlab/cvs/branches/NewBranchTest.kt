@@ -161,6 +161,31 @@ class NewBranchTest {
         assertEquals(fixBefore, session.tagOf("${b.fileName}/$ONE", "BR_FIX"))
     }
 
+    // Use Existing with the switch option switches roots to an existing branch, so a partial one is asked too (decision 20).
+    @Test
+    @DisplayName("Partial root skipped, existing branch used")
+    fun partialRootSkippedExistingBranchUsed() {
+        val (a, b) = roots("partialused")
+        session.branch("${a.fileName}/dir", "BR_SUB")
+        val lists = BranchListService.getInstance(project.get())
+        lists.load(listOf(a, b))
+        lists.awaitLoad()
+        refreshed(project.get())
+        val filesBefore = session.workingFiles(a)
+        prompts.newBranch = NewBranchRequest("BR_SUB", switch = true)
+        prompts.existing = ExistingBranchChoice.USE
+        prompts.partial = PartialBranchChoice.SKIP
+
+        val report = creator().create(listOf(a, b))
+
+        println("${prompts.asked}\n${report?.text()}")
+        assertTrue("partial BR_SUB: {${a.fileName}=1 of 2}" in prompts.asked, "${prompts.asked}")
+        assertEquals(filesBefore, session.workingFiles(a))
+        assertSticky(a, "")
+        assertSticky(b, "BR_SUB")
+        assertEquals(listOf(a.fileName.toString() to "branch covers only part of the root"), report!!.skipped)
+    }
+
     private fun creator() = BranchCreator(project.get(), prompts)
 
     /**

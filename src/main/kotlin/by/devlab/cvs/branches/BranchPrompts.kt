@@ -25,6 +25,12 @@ interface BranchPrompts {
      */
     fun confirmSwitch(project: Project, target: String, changes: Map<String, Int>): Boolean
 
+    /**
+     * What to do with a switch to [branch], which covers only part of the roots in [coverage] (root name → its files
+     * with the branch and all its files): the other files would leave the working copy (design decision 20).
+     */
+    fun confirmPartialBranch(project: Project, branch: String, coverage: Map<String, BranchListService.Coverage>): PartialBranchChoice
+
     /** The new branch's name and whether to switch to it, for [roots] (root names), or null when cancelled. */
     fun askNewBranch(project: Project, roots: List<String>): NewBranchRequest?
 
@@ -41,6 +47,9 @@ interface BranchPrompts {
 
 /** The answer to a new branch name that some roots already have (design decision 10). */
 enum class ExistingBranchChoice { USE, RECREATE, CANCEL }
+
+/** The answer to a branch that covers only part of some roots (design decision 20). */
+enum class PartialBranchChoice { SWITCH, SKIP, CANCEL }
 
 /** What New Branch… asks: the branch [name] (trimmed) and whether to [switch] the roots to it. */
 data class NewBranchRequest(val name: String, val switch: Boolean)
@@ -90,6 +99,12 @@ private object DialogPrompts : BranchPrompts {
             Messages.getWarningIcon(),
         ) == Messages.OK
     }
+
+    override fun confirmPartialBranch(
+        project: Project,
+        branch: String,
+        coverage: Map<String, BranchListService.Coverage>,
+    ): PartialBranchChoice = TODO()
 
     override fun askNewBranch(project: Project, roots: List<String>): NewBranchRequest? = onUiThread {
         val dialog = NewBranchDialog(project, roots)
