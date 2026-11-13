@@ -1,0 +1,223 @@
+package by.devlab.cvs.branches
+
+import by.devlab.cvs.CvsTestSession
+import by.devlab.cvs.CvsTestSession.UpdateOptions
+import by.devlab.cvs.TestCvsServer
+import by.devlab.cvs.TestData
+import by.devlab.cvs.branches.BranchFixtures.refreshed
+import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration
+import com.intellij.notification.Notification
+import com.intellij.notification.Notifications
+import com.intellij.openapi.util.Disposer
+import com.intellij.testFramework.junit5.TestApplication
+import com.intellij.testFramework.junit5.fixture.projectFixture
+import com.intellij.testFramework.junit5.fixture.tempPathFixture
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.RegisterExtension
+import org.netbeans.lib.cvsclient.connection.PServerPasswordScrambler
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+
+/**
+ * Capability cvs-branch-popup, requirements "Switching and going back to the trunk over the roots" and "One report per
+ * action" (design decisions 7, 9, 14, 19): [BranchSwitcher] over two modules checked out from the throwaway server.
+ */
+@TestApplication
+class BranchSwitchTest {
+
+    companion object {
+        @JvmField
+        @RegisterExtension
+        val session = CvsTestSession()
+
+        const val ONE = "one.txt"
+        const val TWO = "dir/two.txt"
+    }
+
+    private val project = projectFixture(tempPathFixture(), openAfterCreation = true)
+    private val prompts = TestPrompts()
+
+    @Test
+    @DisplayName("Switch all roots")
+    fun switchAllRoots() {
+        val (a, b) = roots("all", branches = listOf("BR_RELEASE"))
+
+        val report = switcher().switch(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b))
+
+        println(report?.text())
+        assertSticky(a, "BR_RELEASE")
+        assertSticky(b, "BR_RELEASE")
+        assertEquals(listOf(a.fileName.toString(), b.fileName.toString()), report!!.switched)
+        assertTrue(report.failed.isEmpty(), "${report.failed}")
+    }
+
+    @Test
+    @DisplayName("Switch one root")
+    fun switchOneRoot() {
+        val (a, b) = roots("one", branches = listOf("BR_FIX"))
+
+        switcher().switch(SwitchTarget.Branch("BR_FIX"), listOf(a))
+
+        assertSticky(a, "BR_FIX")
+        assertSticky(b, "")
+    }
+
+    // Review focus: a root that lacks the branch keeps its files.
+    @Test
+    @DisplayName("Root without the branch is left as it is")
+    fun rootWithoutTheBranchIsLeftAsItIs() {
+        val (a, b) = roots("lacks", branches = emptyList())
+        session.branch(a.fileName.toString(), "BR_FIX")
+        BranchListService.getInstance(project.get()).set(a, listOf("BR_FIX"), System.currentTimeMillis())
+        val filesBefore = session.workingFiles(b)
+
+        val report = switcher().switch(SwitchTarget.Branch("BR_FIX"), listOf(a, b))
+
+        println(report?.text())
+        assertSticky(a, "BR_FIX")
+        assertEquals(filesBefore, session.workingFiles(b))
+        assertSticky(b, "")
+        assertEquals(listOf(b.fileName.toString() to "lacks the branch BR_FIX"), report!!.skipped)
+    }
+
+    @Test
+    @DisplayName("Back to trunk")
+    fun backToTrunk() {
+        val (a, b) = roots("trunk", branches = listOf("BR_RELEASE"))
+        session.updateWith(project.get(), a, UpdateOptions(branch = "BR_RELEASE"))
+        refreshed(project.get())
+
+        val report = switcher().switch(SwitchTarget.Trunk, listOf(a, b))
+
+        println(report?.text())
+        assertSticky(a, "")
+        assertSticky(b, "")
+        assertEquals(listOf(a.fileName.toString()), report!!.switched)
+        assertEquals(listOf(b.fileName.toString() to "already on the trunk"), report.skipped)
+    }
+
+    @Test
+    @DisplayName("Mixed root is switched")
+    fun mixedRootIsSwitched() {
+        val (a, _) = roots("mixed", branches = listOf("BR_RELEASE"))
+        session.updateWith(project.get(), a, UpdateOptions(branch = "BR_RELEASE"))
+        session.updateWith(project.get(), a.resolve(ONE), UpdateOptions(resetSticky = true))
+        assertEquals("", session.stickyTag(a.resolve(ONE)))
+        refreshed(project.get())
+
+        val report = switcher().switch(SwitchTarget.Branch("BR_RELEASE"), listOf(a))
+
+        println(report?.text())
+        assertSticky(a, "BR_RELEASE")
+        assertEquals(listOf(a.fileName.toString()), report!!.switched)
+    }
+
+    @Test
+    @DisplayName("Failure in one root")
+    fun failureInOneRoot() {
+        val (a, b) = roots("failure", branches = listOf("BR_RELEASE"))
+        unreachable(a)
+
+        val report = switcher().switch(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b))
+
+        println(report?.text())
+        assertSticky(b, "BR_RELEASE")
+        assertEquals(listOf(b.fileName.toString()), report!!.switched)
+        assertEquals(listOf(a.fileName.toString()), report.failed.map { it.first })
+    }
+
+    @Test
+    @DisplayName("Report of a switch")
+    fun reportOfASwitch() {
+        val (a, b) = roots("report", branches = listOf("BR_RELEASE"))
+        val module = a.fileName.toString()
+        // bob changes the line on the branch, alice has her own uncommitted edit of it: the switch merges with a conflict.
+        val bob = session.checkout("bob", module, session.newDirectory("$module-bob"), tag = "BR_RELEASE")
+        session.mapToCvs(project.get(), bob)
+        TestData.edit(bob.resolve(ONE), "one on the branch\n".toByteArray())
+        session.commit(project.get(), listOf(bob.resolve(ONE)), "bob changes one on the branch")
+        TestData.edit(a.resolve(ONE), "one, alice's edit\n".toByteArray())
+        session.updateWith(project.get(), b, UpdateOptions(branch = "BR_RELEASE"))
+        refreshed(project.get())
+
+        val (report, notification) = notified { switcher().switch(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b)) }
+
+        println("${notification.title}\n${notification.content}")
+        assertEquals(listOf(module), report!!.switched)
+        assertEquals(listOf(b.fileName.toString() to "already on BR_RELEASE"), report.skipped)
+        assertEquals(listOf("$module/$ONE"), report.conflicts)
+        val text = "${notification.title}\n${notification.content}"
+        assertTrue(text.contains("Switched: $module"), text)
+        assertTrue(text.contains("${b.fileName}: already on BR_RELEASE"), text)
+        assertTrue(text.contains("Conflicts: $module/$ONE"), text)
+    }
+
+    private fun switcher() = BranchSwitcher(project.get(), prompts)
+
+    /**
+     * Two modules `<prefix>-a` and `<prefix>-b` with [ONE] and [TWO], [branches] made on both, checked out side by side
+     * as alice, mapped to CVS, with both lists remembered as [branches].
+     */
+    private fun roots(prefix: String, branches: List<String>): Pair<Path, Path> {
+        val parent = session.newDirectory("$prefix-wc")
+        val roots = listOf("$prefix-a", "$prefix-b").map { module ->
+            val seed = session.newDirectory("$module-seed")
+            TestData.write(seed.resolve(ONE), "one\n".toByteArray())
+            TestData.write(seed.resolve(TWO), "two\n".toByteArray())
+            session.importModule("alice", seed, module)
+            branches.forEach { session.branch(module, it) }
+            session.checkout("alice", module, parent)
+        }
+        session.mapToCvs(project.get(), *roots.toTypedArray())
+        refreshed(project.get())
+        roots.forEach { BranchListService.getInstance(project.get()).set(it, branches, System.currentTimeMillis()) }
+        return roots[0] to roots[1]
+    }
+
+    /** Points every `CVS/Root` of [root] at a closed local port, with a password for it so that no login is asked. */
+    private fun unreachable(root: Path) {
+        val port = ServerSocket(0, 50, InetAddress.getLoopbackAddress()).use { it.localPort }
+        val cvsRoot = ":pserver:alice@127.0.0.1:$port/cvsroot"
+        Files.walk(root).use { paths ->
+            paths.filter { it.fileName.toString() == "Root" && it.parent.fileName.toString() == "CVS" }
+                .forEach { Files.writeString(it, "$cvsRoot\n") }
+        }
+        val scrambled = PServerPasswordScrambler.getInstance().scramble(TestCvsServer.PASSWORD)
+        val passwordFile = Path.of(CvsApplicationLevelConfiguration.getInstance().PATH_TO_PASSWORD_FILE)
+        Files.writeString(passwordFile, "$cvsRoot $scrambled\n", StandardOpenOption.APPEND)
+    }
+
+    /** Runs [action] and returns its result with the one IntelliJCVS notification it shows. */
+    private fun <T> notified(action: () -> T): Pair<T, Notification> {
+        val shown = LinkedBlockingQueue<Notification>()
+        val disposable = Disposer.newDisposable()
+        try {
+            project.get().messageBus.connect(disposable).subscribe(Notifications.TOPIC, object : Notifications {
+                override fun notify(notification: Notification) {
+                    if (notification.groupId == "IntelliJCVS") shown += notification
+                }
+            })
+            val result = action()
+            val notification = checkNotNull(shown.poll(60, TimeUnit.SECONDS)) { "no IntelliJCVS notification" }
+            assertTrue(shown.poll(1, TimeUnit.SECONDS) == null, "more than one notification")
+            return result to notification
+        } finally {
+            Disposer.dispose(disposable)
+        }
+    }
+
+    private fun assertSticky(root: Path, tag: String) {
+        val files = session.workingFiles(root)
+        assertFalse(files.isEmpty())
+        for (file in files) assertEquals(tag, session.stickyTag(file), "sticky tag of $file")
+    }
+}
