@@ -47,10 +47,12 @@ data class BranchReport(
     val conflicts: List<String>,
     val failed: List<Pair<String, String>>,
     val switchedLabel: String = "Switched",
+    val notes: List<String> = emptyList(),
 ) {
     /** One line per kind: `Switched: a, b`, `Skipped: b: already on X`, `Conflicts: a/f`, `Failed: a: error`. */
     fun text(): String = buildList {
         if (switched.isNotEmpty()) add("$switchedLabel: ${switched.joinToString(", ")}")
+        addAll(notes)
         if (skipped.isNotEmpty()) add("Skipped: ${skipped.joinToString("; ") { (root, reason) -> "$root: $reason" }}")
         if (conflicts.isNotEmpty()) add("Conflicts: ${conflicts.joinToString(", ")}")
         if (failed.isNotEmpty()) add("Failed: ${failed.joinToString("; ") { (root, error) -> "$root: $error" }}")
@@ -163,7 +165,7 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
      * The number of changed files per root of [steps] (root name → count, roots without changes left out), from the
      * IDE's change list after it took in the current disk state; no server is contacted (design decision 8).
      */
-    private fun uncommittedChanges(steps: List<Step>): Map<String, Int> {
+    internal fun uncommittedChanges(steps: List<Step>): Map<String, Int> {
         if (steps.isEmpty()) return emptyMap()
         val manager = ChangeListManager.getInstance(project)
         steps.forEach { CvsRunner.refresh(project, it.root) }

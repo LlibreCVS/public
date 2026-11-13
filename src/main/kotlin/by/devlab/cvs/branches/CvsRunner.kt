@@ -3,6 +3,8 @@ package by.devlab.cvs.branches
 import com.intellij.cvsSupport2.cvsExecution.CvsOperationExecutor
 import com.intellij.cvsSupport2.cvsExecution.CvsOperationExecutorCallback
 import com.intellij.cvsSupport2.cvshandlers.CvsHandler
+import com.intellij.cvsSupport2.cvsoperations.cvsMessages.CvsMessagesAdapter
+import com.intellij.cvsSupport2.cvsoperations.cvsMessages.MessageEvent
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ModalityState
@@ -22,7 +24,13 @@ internal object CvsRunner {
      * Runs [handler] synchronously on the calling thread (never the UI thread) and returns the first CVS error, or null
      * when it succeeded. Warnings (e.g. a merge conflict) are not errors.
      */
-    fun run(project: Project, handler: CvsHandler): String? {
+    fun run(project: Project, handler: CvsHandler, onMessage: (String) -> Unit = {}): String? {
+        handler.addCvsListener(object : CvsMessagesAdapter() {
+            // cvs 1.11 sends its "NOT MOVING" warnings as ordinary (M) lines, not on the error stream.
+            override fun addMessage(event: MessageEvent) {
+                if (event.message.isNotBlank()) onMessage(event.message)
+            }
+        })
         val executor = CvsOperationExecutor(false, project, ModalityState.nonModal())
         executor.setShowErrors(false)
         executor.setIsQuietOperation(true)
