@@ -10,12 +10,18 @@ import com.intellij.cvsSupport2.cvsoperations.dateOrRevision.RevisionOrDate
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vcs.update.FileGroup
 import com.intellij.openapi.vcs.update.UpdatedFiles
 import com.intellij.vcsUtil.VcsUtil
 import org.netbeans.lib.cvsclient.command.KeywordSubstitution
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+private val LOG = logger<BranchSwitcher>()
 
 /** Where a switch takes the roots: a branch or the trunk. */
 sealed interface SwitchTarget {
@@ -89,6 +95,9 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
      */
     fun switch(target: SwitchTarget, roots: List<Path>): BranchReport? {
         val steps = plan(target, roots)
+        // Uncommitted changes are confirmed before anything changes (design decision 8); without any, nothing is asked.
+        val changes = uncommittedChanges(steps.filter { it.skip == null })
+        if (changes.isNotEmpty() && !prompts.confirmSwitch(project, target.text, changes)) return null
         val switched = ArrayList<String>()
         val conflicts = ArrayList<String>()
         val failed = ArrayList<Pair<String, String>>()
@@ -136,6 +145,27 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
                 switch(target, roots)
             }
         }.queue()
+    }
+
+    /**
+     * The number of changed files per root of [steps] (root name → count, roots without changes left out), from the
+     * IDE's change list after it took in the current disk state; no server is contacted (design decision 8).
+     */
+    private fun uncommittedChanges(steps: List<Step>): Map<String, Int> {
+        if (steps.isEmpty()) return emptyMap()
+        val manager = ChangeListManager.getInstance(project)
+        steps.forEach { CvsRunner.refresh(project, it.root) }
+        val updated = CountDownLatch(1)
+        manager.invokeAfterUpdate(false) { updated.countDown() }
+        if (!updated.await(2, TimeUnit.MINUTES)) LOG.warn("The change list did not update in time; counting what it has")
+        val counts = LinkedHashMap<String, Int>()
+        for (step in steps) {
+            val count = manager.getChangesIn(VcsUtil.getFilePath(step.root.toFile(), true))
+                .mapNotNull { (it.afterRevision ?: it.beforeRevision)?.file?.path }
+                .distinct().size
+            if (count > 0) counts[step.name] = count
+        }
+        return counts
     }
 
     /** [file] (a path CVS reported) as `<root name>/<path below the root>`. */
