@@ -8,6 +8,7 @@ import by.devlab.cvs.branches.BranchFixtures.refreshed
 import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration
 import com.intellij.notification.Notification
 import com.intellij.notification.Notifications
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.projectFixture
@@ -277,6 +278,65 @@ class BranchSwitchTest {
 
         assertEquals(emptyList<String>(), prompts.asked)
         assertSticky(a, "BR_SUB")
+    }
+
+    @Test
+    @DisplayName("Second operation refused")
+    fun secondOperationRefused() {
+        val (a, b) = roots("refused", branches = listOf("BR_RELEASE"))
+        val operations = BranchOperations.getInstance(project.get())
+        assertTrue(operations.tryStart())
+        try {
+            for (start in listOf<() -> Unit>(
+                { switcher().start(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b)) },
+                { BranchCreator(project.get(), prompts).start(listOf(a, b)) },
+            )) {
+                val (_, notification) = notified(start)
+                val text = "${notification.title}\n${notification.content}"
+                println(text)
+                assertTrue(text.contains("CVS branch operation is already running"), text)
+            }
+            assertEquals(emptyList<String>(), prompts.asked)
+            assertSticky(a, "")
+            assertSticky(b, "")
+            assertTrue(operations.isRunning, "the running operation keeps the flag")
+        } finally {
+            operations.finish()
+        }
+    }
+
+    // Review focus: the operation flag is always released, also after a cancel.
+    @Test
+    @DisplayName("Operation flag is released")
+    fun operationFlagIsReleased() {
+        val (a, b) = roots("released", branches = listOf("BR_RELEASE"))
+        val operations = BranchOperations.getInstance(project.get())
+        TestData.edit(a.resolve(ONE), "one, alice's edit\n".toByteArray())
+        val runningWhenAsked = mutableListOf<Boolean>()
+        prompts.onAsk = { runningWhenAsked += operations.isRunning }
+
+        switcher().start(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b))
+        awaitIdle(operations)
+
+        assertEquals(listOf(true), runningWhenAsked, "the flag is held while the switch runs")
+        assertSticky(b, "BR_RELEASE")
+
+        // Cancelled at the question: the flag is released all the same.
+        prompts.onAsk = { throw ProcessCanceledException() }
+        runCatching { switcher().start(SwitchTarget.Trunk, listOf(a, b)) }
+        awaitIdle(operations)
+        assertFalse(operations.isRunning)
+        assertSticky(b, "BR_RELEASE")
+        assertTrue(operations.tryStart(), "a new operation can start")
+        operations.finish()
+    }
+
+    private fun awaitIdle(operations: BranchOperations) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120)
+        while (operations.isRunning) {
+            check(System.nanoTime() < deadline) { "the branch operation did not finish" }
+            Thread.sleep(50)
+        }
     }
 
     private fun switcher() = BranchSwitcher(project.get(), prompts)

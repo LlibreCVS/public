@@ -165,6 +165,54 @@ class BranchPopupTest {
         assertFalse(loaded.render().contains("Loading"), loaded.render())
     }
 
+    @Test
+    @DisplayName("Popup during an operation")
+    fun popupDuringAnOperation() {
+        val a = workingCopy(temp.get(), "module-a")
+        val b = workingCopy(temp.get(), "module-b")
+        mapToCvs(project.get(), a, b)
+        refreshed(project.get())
+        lists(a to listOf("BR_RELEASE", "BR_FIX"), b to listOf("BR_RELEASE"))
+        val operations = BranchOperations.getInstance(project.get())
+        assertTrue(operations.tryStart())
+        try {
+            val model = BranchPopupModel.build(project.get(), opening = true)
+            println(model.render())
+
+            val first = items(model.entries).first()
+            assertEquals(BranchOperations.IN_PROGRESS, first.text)
+            assertFalse(first.enabled)
+            val actions = items(model.entries) + model.entries.filterIsInstance<Submenu>().flatMap { items(it.entries) }
+            val refresh = actions.filter { it.choice is BranchChoice.Refresh }
+            assertEquals(1, refresh.size, model.render())
+            assertTrue(refresh.single().enabled, "Refresh Branch List stays enabled")
+            for (entry in actions.filter { it.choice != null && it.choice !is BranchChoice.Refresh }) {
+                assertFalse(entry.enabled, "${entry.text} must be disabled during an operation")
+            }
+            assertTrue(actions.any { it.text == "BR_FIX" } && actions.count { it.text == NEW_BRANCH } == 3, model.render())
+        } finally {
+            operations.finish()
+        }
+        val after = BranchPopupModel.build(project.get(), opening = true)
+        assertFalse(after.render().contains(BranchOperations.IN_PROGRESS), after.render())
+        assertTrue(item(after.entries, "BR_RELEASE").enabled)
+    }
+
+    @Test
+    @DisplayName("Load error shown by its first line")
+    fun loadErrorShownByItsFirstLine() {
+        val a = workingCopy(temp.get(), "module-a")
+        mapToCvs(project.get(), a)
+        refreshed(project.get())
+        BranchListService.getInstance(project.get()).setError(a, "cannot reach the server\n\tat some.Frame(Frame.java:1)")
+
+        val model = BranchPopupModel.build(project.get(), opening = false)
+        println(model.render())
+
+        assertTrue(items(model.entries).any { it.text == "Cannot load branches: cannot reach the server" && !it.enabled }, model.render())
+        assertFalse(model.render().contains("some.Frame"), model.render())
+    }
+
     /** Sets the remembered lists of the roots. */
     private fun lists(vararg lists: Pair<Path, List<String>>) {
         val service = BranchListService.getInstance(project.get())

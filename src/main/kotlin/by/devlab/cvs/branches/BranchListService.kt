@@ -173,6 +173,12 @@ class BranchListService(private val project: Project) : PersistentStateComponent
         publish()
     }
 
+    /** Records [error] as the last load error of [root] (test hook). */
+    internal fun setError(root: Path, error: String) {
+        synchronized(lock) { errors[key(root)] = error }
+        publish()
+    }
+
     private fun loadRoot(root: Path) {
         try {
             val log = BranchLog.read(project, root)
