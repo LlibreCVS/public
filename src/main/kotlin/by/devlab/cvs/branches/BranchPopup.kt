@@ -82,7 +82,9 @@ object BranchPopup {
                 // A new popup shows "Loading branches…" and reopens itself with the new lists (design decision 16).
                 ApplicationManager.getApplication().invokeLater({ show(project, component, opening = false) }, project.disposed)
             }
-            is BranchChoice.Switch, is BranchChoice.Trunk, is BranchChoice.NewBranch -> Unit
+            is BranchChoice.Switch -> BranchSwitcher(project).start(SwitchTarget.Branch(choice.branch), choice.roots)
+            is BranchChoice.Trunk -> BranchSwitcher(project).start(SwitchTarget.Trunk, choice.roots)
+            is BranchChoice.NewBranch -> Unit
         }
     }
 

@@ -191,6 +191,8 @@ class BranchSwitchTest {
             paths.filter { it.fileName.toString() == "Root" && it.parent.fileName.toString() == "CVS" }
                 .forEach { Files.writeString(it, "$cvsRoot\n") }
         }
+        // OpenCVS reads CVS/Root through the VFS, so the IDE must see the new files.
+        BranchFixtures.virtualFile(root).refresh(false, true)
         val scrambled = PServerPasswordScrambler.getInstance().scramble(TestCvsServer.PASSWORD)
         val passwordFile = Path.of(CvsApplicationLevelConfiguration.getInstance().PATH_TO_PASSWORD_FILE)
         Files.writeString(passwordFile, "$cvsRoot $scrambled\n", StandardOpenOption.APPEND)

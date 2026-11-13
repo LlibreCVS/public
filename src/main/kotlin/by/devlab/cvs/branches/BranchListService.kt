@@ -1,11 +1,8 @@
 package by.devlab.cvs.branches
 
-import com.intellij.cvsSupport2.cvsExecution.CvsOperationExecutor
-import com.intellij.cvsSupport2.cvsExecution.CvsOperationExecutorCallback
 import com.intellij.cvsSupport2.cvshandlers.CommandCvsHandler
 import com.intellij.cvsSupport2.cvsoperations.cvsLog.LogOperation
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
@@ -13,8 +10,6 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.progress.EmptyProgressIndicator
-import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.messages.Topic
@@ -211,16 +206,7 @@ internal object BranchLog {
      */
     fun branches(project: Project, root: Path): Set<String> {
         val operation = BranchLogOperation(root)
-        val executor = CvsOperationExecutor(false, project, ModalityState.nonModal())
-        executor.setShowErrors(false)
-        executor.setIsQuietOperation(true)
-        val run = { executor.performActionSync(CommandCvsHandler("Load CVS branches", operation, true), CvsOperationExecutorCallback.EMPTY) }
-        if (ProgressManager.getInstance().progressIndicator == null) {
-            ProgressManager.getInstance().runProcess(run, EmptyProgressIndicator())
-        } else {
-            run()
-        }
-        if (!executor.hasNoErrors()) throw executor.firstError
+        CvsRunner.run(project, CommandCvsHandler("Load CVS branches", operation, true))?.let { throw IllegalStateException(it) }
         return operation.branches
     }
 
