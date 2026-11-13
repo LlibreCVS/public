@@ -78,11 +78,14 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
             if (toLoad.isNotEmpty()) service.load(toLoad)
             val loading = roots.map { it.path }.filter { service.isLoading(it) }
             val lists = roots.associate { it.path to service.list(it.path) }
+            // While a branch operation runs, only Refresh Branch List can be chosen (design decision 21).
+            val busy = BranchOperations.getInstance(project).isRunning
 
             val entries = ArrayList<Entry>()
+            if (busy) entries += Item(BranchOperations.IN_PROGRESS, null, enabled = false)
             if (roots.size == 1) {
                 val root = roots.single()
-                entries += rootEntries(roots, lists[root.path]?.branches.orEmpty())
+                entries += rootEntries(roots, lists[root.path]?.branches.orEmpty(), busy)
                 entries += statusEntries(service, root.path, root.path in loading, lists[root.path] != null)
             } else {
                 // Only branches every root's list has go to the top level (design decision 6, option A).
@@ -91,12 +94,12 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
                 } else {
                     lists.values.map { it!!.branches.toSet() }.reduceOrNull { all, next -> all intersect next }.orEmpty().sorted()
                 }
-                entries += rootEntries(roots, common)
+                entries += rootEntries(roots, common, busy)
                 if (loading.isNotEmpty()) entries += Item(LOADING, null, enabled = false)
                 entries += Separator("Roots")
                 for (root in roots) {
                     val list = lists[root.path]?.branches.orEmpty()
-                    entries += Submenu("${root.name}: ${root.status.text}", rootEntries(listOf(root), list) +
+                    entries += Submenu("${root.name}: ${root.status.text}", rootEntries(listOf(root), list, busy) +
                         statusEntries(service, root.path, root.path in loading, lists[root.path] != null))
                 }
             }
@@ -109,29 +112,35 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
 
         /**
          * New Branch…, Back to Trunk and [branches] acting on [roots]. A branch every root is on, with no file on another
-         * branch, is current and chooses nothing (design decisions 6, 19).
+         * branch, is current and chooses nothing (design decisions 6, 19). When [busy], every entry is disabled
+         * (design decision 21).
          */
-        private fun rootEntries(roots: List<BranchStateService.Root>, branches: List<String>): List<Entry> {
+        private fun rootEntries(roots: List<BranchStateService.Root>, branches: List<String>, busy: Boolean): List<Entry> {
             val paths = roots.map { it.path }
             val entries = mutableListOf<Entry>(
-                Item(NEW_BRANCH, BranchChoice.NewBranch(paths)),
-                Item(BACK_TO_TRUNK, BranchChoice.Trunk(paths)),
+                Item(NEW_BRANCH, BranchChoice.NewBranch(paths), enabled = !busy),
+                Item(BACK_TO_TRUNK, BranchChoice.Trunk(paths), enabled = !busy),
             )
             if (branches.isNotEmpty()) entries += Separator("Branches")
             for (branch in branches) {
                 val target = BranchState(BranchKind.BRANCH, branch)
                 val current = roots.all { it.status.state == target && it.status.mixedFiles == 0 }
-                entries += Item(branch, if (current) null else BranchChoice.Switch(branch, paths), current = current)
+                entries += Item(branch, if (current) null else BranchChoice.Switch(branch, paths), current = current, enabled = !busy)
             }
             return entries
         }
 
-        /** "Loading branches…" while [root]'s list loads, or why its load failed when it has no list. */
-        private fun statusEntries(service: BranchListService, root: Path, loading: Boolean, listed: Boolean): List<Entry> = when {
-            loading -> listOf(Item(LOADING, null, enabled = false))
-            !listed && service.error(root) != null ->
-                listOf(Item("Cannot load branches: ${service.error(root)}", null, enabled = false))
-            else -> emptyList()
+        /**
+         * "Loading branches…" while [root]'s list loads, or why its load failed when it has no list: the error's first
+         * line only (design decision 22).
+         */
+        private fun statusEntries(service: BranchListService, root: Path, loading: Boolean, listed: Boolean): List<Entry> {
+            val error = service.error(root)?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
+            return when {
+                loading -> listOf(Item(LOADING, null, enabled = false))
+                !listed && error != null -> listOf(Item("Cannot load branches: $error", null, enabled = false))
+                else -> emptyList()
+            }
         }
     }
 }

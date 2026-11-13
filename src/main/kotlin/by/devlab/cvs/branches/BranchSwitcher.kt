@@ -7,9 +7,8 @@ import com.intellij.cvsSupport2.cvshandlers.CommandCvsHandler
 import com.intellij.cvsSupport2.cvshandlers.CvsUpdatePolicy
 import com.intellij.cvsSupport2.updateinfo.UpdatedFilesProcessor
 import com.intellij.cvsSupport2.cvsoperations.dateOrRevision.RevisionOrDate
-import com.intellij.openapi.progress.ProgressIndicator
-import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vcs.update.FileGroup
@@ -144,6 +143,8 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
             handler.addCvsListener(UpdatedFilesProcessor(updated))
             CvsRunner.run(project, handler)
         } catch (e: Exception) {
+            // A cancel or another control-flow exception ends the operation; it is not a root's failure (decision 22).
+            if (e is ControlFlowException) throw e
             e.message ?: e.toString()
         }
         CvsRunner.refresh(project, root)
@@ -154,13 +155,12 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         return UpdateResult(error, conflicts)
     }
 
-    /** Switches [roots] to [target] in a background task (called from the popup on the UI thread). */
+    /**
+     * Switches [roots] to [target] in a background task (called from the popup on the UI thread), unless another branch
+     * operation runs (design decision 21).
+     */
     fun start(target: SwitchTarget, roots: List<Path>) {
-        object : Task.Backgroundable(project, "Switching to ${target.text}", false) {
-            override fun run(indicator: ProgressIndicator) {
-                switch(target, roots)
-            }
-        }.queue()
+        BranchOperations.getInstance(project).queue("Switching to ${target.text}") { switch(target, roots) }
     }
 
     /**

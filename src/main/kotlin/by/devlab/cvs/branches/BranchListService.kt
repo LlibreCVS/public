@@ -9,6 +9,7 @@ import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.util.concurrency.AppExecutorUtil
@@ -134,9 +135,15 @@ class BranchListService(private val project: Project) : PersistentStateComponent
         }
         if (requested.isEmpty()) return
         val future = executor.submit {
-            for (root in requested) {
-                if (disposed || project.isDisposed) break
-                loadRoot(root)
+            var next = 0
+            try {
+                while (next < requested.size && !disposed && !project.isDisposed) {
+                    // loadRoot ends its own root's loading, also when it throws.
+                    loadRoot(requested[next++])
+                }
+            } finally {
+                // Roots not reached (a cancel, a disposed project) are no longer loading.
+                synchronized(lock) { loading.removeAll(requested.subList(next, requested.size).toSet()) }
             }
         }
         synchronized(lock) {
@@ -184,16 +191,16 @@ class BranchListService(private val project: Project) : PersistentStateComponent
             val log = BranchLog.read(project, root)
             synchronized(lock) {
                 lists[root] = BranchList(log.branches.sorted(), System.currentTimeMillis(), log.files, log.coverage)
-                loading.remove(root)
             }
         } catch (e: Exception) {
+            // A cancel or another control-flow exception ends the load; it is not the root's error (decision 22).
+            if (e is ControlFlowException) throw e
             LOG.warn("Cannot load the CVS branches of $root", e)
-            synchronized(lock) {
-                errors[root] = e.message ?: e.toString()
-                loading.remove(root)
-            }
+            synchronized(lock) { errors[root] = e.message ?: e.toString() }
+        } finally {
+            synchronized(lock) { loading.remove(root) }
+            publish()
         }
-        publish()
     }
 
     private fun publish() {

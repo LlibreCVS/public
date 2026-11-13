@@ -3,8 +3,7 @@ package by.devlab.cvs.branches
 import by.devlab.cvs.tagging.validateTagName
 import com.intellij.cvsSupport2.config.CvsConfiguration
 import com.intellij.cvsSupport2.cvshandlers.CommandCvsHandler
-import com.intellij.openapi.progress.ProgressIndicator
-import com.intellij.openapi.progress.Task
+import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.project.Project
 import com.intellij.vcsUtil.VcsUtil
 import java.nio.file.Path
@@ -126,18 +125,19 @@ class BranchCreator(private val project: Project, private val prompts: BranchPro
                 if (NOT_MOVING.containsMatchIn(message)) notMoved += message.trim()
             }
         } catch (e: Exception) {
+            // A cancel or another control-flow exception ends the operation; it is not a root's failure (decision 22).
+            if (e is ControlFlowException) throw e
             e.message ?: e.toString()
         }
         return error ?: notMoved.firstOrNull()?.let { "$branch already exists in the repository (${it})" }
     }
 
-    /** Creates a branch in [roots] in a background task (called from the popup on the UI thread). */
+    /**
+     * Creates a branch in [roots] in a background task (called from the popup on the UI thread), unless another branch
+     * operation runs (design decision 21).
+     */
     fun start(roots: List<Path>) {
-        object : Task.Backgroundable(project, "Creating a CVS branch", false) {
-            override fun run(indicator: ProgressIndicator) {
-                create(roots)
-            }
-        }.queue()
+        BranchOperations.getInstance(project).queue("Creating a CVS branch") { create(roots) }
     }
 
     private companion object {
