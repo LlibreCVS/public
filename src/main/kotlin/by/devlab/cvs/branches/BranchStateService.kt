@@ -30,6 +30,7 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Told when the cached branch state of a project's CVS roots changed. */
 fun interface BranchStateListener {
@@ -71,6 +72,13 @@ class BranchStateService(private val project: Project) : Disposable {
 
     @Volatile
     private var disposed = false
+
+    /** Test hook: called with each directory the mixed scan reaches, before it is read. */
+    @Volatile
+    internal var onScanDirectory: (Path) -> Unit = {}
+
+    /** Test hook: how many times the roots were looked for. */
+    internal val discoveries = AtomicInteger()
 
     init {
         val connection = project.messageBus.connect(this)
@@ -207,7 +215,7 @@ class BranchStateService(private val project: Project) : Disposable {
             }
             roots = roots.map { root ->
                 if (root !in toScan || disposed) return@map root
-                root.copy(status = root.status.copy(mixedFiles = MixedScan.count(root.path, ::watch)))
+                root.copy(status = root.status.copy(mixedFiles = MixedScan.count(root.path) { onScanDirectory(it); watch(it) }))
             }
             // The roots not scanned now still need their own CVS directory watched, e.g. after a rediscovery.
             roots.filter { it !in toScan }.forEach { watch(it.path) }
@@ -248,6 +256,7 @@ class BranchStateService(private val project: Project) : Disposable {
      * not descended into.
      */
     private fun discoverRoots(): List<Path> {
+        discoveries.incrementAndGet()
         val vcsName = CvsVcs2.getKey().name
         val mapped = ProjectLevelVcsManager.getInstance(project).directoryMappings
             .filter { it.vcs == vcsName }

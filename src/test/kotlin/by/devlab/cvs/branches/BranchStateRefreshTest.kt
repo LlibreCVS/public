@@ -10,11 +10,15 @@ import by.devlab.cvs.branches.BranchFixtures.workingCopy
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
+import by.devlab.vcs.FakeWorkingCopy
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.RegisterExtension
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Capability cvs-branch-indicator, requirement "Indicator follows the working copy" (design decision 11): the
@@ -77,5 +81,81 @@ class BranchStateRefreshTest {
         assertEquals("trunk", checkNotNull(service.indicator(null)).text)
         assertEquals(entries.toList(), Files.readAllBytes(root.resolve("CVS/Entries")).toList())
         assertEquals(entriesModified, Files.getLastModifiedTime(root.resolve("CVS/Entries")))
+    }
+
+    // Requirement "Mixed working copy": the mark follows an Entries change, and the root's state never waits for a
+    // running mixed scan (code review of cvs-branch-indicator, issues 1, 4 and 7).
+    @Test
+    @DisplayName("Mark follows the working copy")
+    fun stateDoesNotWaitForTheMixedScan() {
+        val root = workingCopy(temp.get(), "wc")
+        FakeWorkingCopy.fileEntry(root, "a.txt", "TBR_RELEASE")
+        mapToCvs(project.get(), root)
+        val service = refreshed(project.get())
+        assertEquals("trunk *", checkNotNull(service.indicator(null)).text)
+
+        // Another file on the branch arrives through the VFS: the scan starts and is held at its first directory.
+        val gate = CountDownLatch(1)
+        val scanStarted = CountDownLatch(1)
+        service.onScanDirectory = {
+            scanStarted.countDown()
+            gate.await(30, TimeUnit.SECONDS)
+        }
+        try {
+            FakeWorkingCopy.fileEntry(root, "b.txt", "TBR_RELEASE")
+            virtualFile(root).refresh(false, true)
+            assertTrue(scanStarted.await(30, TimeUnit.SECONDS), "the mixed scan did not start")
+
+            // While that scan is held, the root is switched to the branch: the new state shows at once, without the
+            // mark counted for the old state.
+            Files.writeString(root.resolve("CVS/Tag"), "TBR_RELEASE\n")
+            virtualFile(root).refresh(false, true)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+            while (service.indicator(null)?.text != "BR_RELEASE" && System.nanoTime() < deadline) Thread.sleep(20)
+            assertEquals("BR_RELEASE", checkNotNull(service.indicator(null)).text)
+        } finally {
+            service.onScanDirectory = {}
+            gate.countDown()
+        }
+        service.awaitRefresh()
+        assertEquals("BR_RELEASE", checkNotNull(service.indicator(null)).text)
+
+        // A third file back on the trunk is counted against the new state.
+        FakeWorkingCopy.fileEntry(root, "c.txt")
+        virtualFile(root).refresh(false, true)
+        service.awaitRefresh()
+        assertEquals("BR_RELEASE *", checkNotNull(service.indicator(null)).text)
+    }
+
+    // Code review of cvs-branch-indicator, issue 2: CVS directories outside the CVS mappings never make the service
+    // look for roots again, and the search below a mapped directory skips tool directories.
+    @Test
+    @DisplayName("Roots are looked for only inside the mappings")
+    fun rootsAreLookedForOnlyInsideTheMappings() {
+        val modules = temp.get().resolve("modules")
+        workingCopy(modules, "module-a")
+        workingCopy(modules.resolve("node_modules"), "module-b")
+        mapToCvs(project.get(), modules)
+        val service = refreshed(project.get())
+        assertEquals(listOf("module-a"), service.roots().map { it.name })
+        val discoveries = service.discoveries.get()
+
+        becomeWorkingCopy(temp.get().resolve("elsewhere"), "other")
+        service.awaitRefresh()
+        assertEquals(discoveries, service.discoveries.get())
+
+        // Control: the same event inside the mapping finds the new root.
+        becomeWorkingCopy(modules, "module-c")
+        service.awaitRefresh()
+        assertEquals(discoveries + 1, service.discoveries.get())
+        assertEquals(listOf("module-a", "module-c"), service.roots().map { it.name })
+    }
+
+    /** Makes the directory [name] under [parent], already loaded in the VFS, a working copy the VFS reports. */
+    private fun becomeWorkingCopy(parent: java.nio.file.Path, name: String) {
+        val dir = Files.createDirectories(parent.resolve(name))
+        virtualFile(dir).children
+        workingCopy(parent, name)
+        virtualFile(dir).refresh(false, true)
     }
 }
