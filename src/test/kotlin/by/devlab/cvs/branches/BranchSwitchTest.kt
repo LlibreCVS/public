@@ -161,6 +161,55 @@ class BranchSwitchTest {
         assertTrue(text.contains("Conflicts: $module/$ONE"), text)
     }
 
+    @Test
+    @DisplayName("Warning before a switch")
+    fun warningBeforeASwitch() {
+        val (a, b) = roots("warn", branches = listOf("BR_RELEASE"))
+        TestData.edit(a.resolve(ONE), "one, alice's edit\n".toByteArray())
+        TestData.edit(a.resolve(TWO), "two, alice's edit\n".toByteArray())
+        val stickyWhenAsked = mutableListOf<String>()
+        prompts.onAsk = { stickyWhenAsked += listOf(a, b).map { session.stickyTag(it.resolve(ONE)) } }
+
+        switcher().switch(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b))
+
+        println(prompts.asked)
+        assertEquals(listOf("switch to BR_RELEASE: {${a.fileName}=2}"), prompts.asked)
+        assertEquals(listOf("", ""), stickyWhenAsked, "no root is switched before the answer")
+        assertSticky(a, "BR_RELEASE")
+        assertSticky(b, "BR_RELEASE")
+    }
+
+    @Test
+    @DisplayName("Switch cancelled")
+    fun switchCancelled() {
+        val (a, b) = roots("cancel", branches = listOf("BR_RELEASE"))
+        TestData.edit(a.resolve(ONE), "one, alice's edit\n".toByteArray())
+        TestData.edit(a.resolve(TWO), "two, alice's edit\n".toByteArray())
+        prompts.confirmSwitch = false
+
+        val report = switcher().switch(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b))
+
+        println(prompts.asked)
+        assertEquals(1, prompts.asked.size, "${prompts.asked}")
+        assertEquals(null, report)
+        assertSticky(a, "")
+        assertSticky(b, "")
+        assertEquals("one, alice's edit\n", TestData.text(a.resolve(ONE), Charsets.UTF_8))
+        assertEquals("two, alice's edit\n", TestData.text(a.resolve(TWO), Charsets.UTF_8))
+    }
+
+    @Test
+    @DisplayName("No warning without changes")
+    fun noWarningWithoutChanges() {
+        val (a, b) = roots("quiet", branches = listOf("BR_RELEASE"))
+
+        switcher().switch(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b))
+
+        assertEquals(emptyList<String>(), prompts.asked)
+        assertSticky(a, "BR_RELEASE")
+        assertSticky(b, "BR_RELEASE")
+    }
+
     private fun switcher() = BranchSwitcher(project.get(), prompts)
 
     /**
