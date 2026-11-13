@@ -77,6 +77,29 @@ class PackagingTest {
         assertTrue(groups.any { it.getAttribute("id") == "IntelliJCVS" }, "no notification group IntelliJCVS")
     }
 
+    @Test
+    @DisplayName("Branch widget sits in the main toolbar")
+    fun branchWidgetSitsInTheMainToolbar() {
+        val root = descriptor()
+        val action = root.children("actions").flatMap { it.children("action") }
+            .singleOrNull { it.getAttribute("id") == "IntelliJCVS.BranchWidget" }
+        checkNotNull(action) { "no action IntelliJCVS.BranchWidget under <actions> of the packaged descriptor" }
+        assertEquals("by.devlab.cvs.branches.BranchToolbarAction", action.getAttribute("class"))
+        val group = action.children("add-to-group").single()
+        assertEquals("MainToolbarLeft", group.getAttribute("group-id"))
+        assertEquals("before", group.getAttribute("anchor"))
+        assertEquals("MainToolbarGeneralActionsGroup", group.getAttribute("relative-to-action"))
+        val factories = root.children("extensions").flatMap { it.children("statusBarWidgetFactory") }
+        val factory = factories.singleOrNull { it.getAttribute("id") == "IntelliJCVS.BranchWidget" }
+        checkNotNull(factory) { "no statusBarWidgetFactory IntelliJCVS.BranchWidget" }
+        assertEquals("by.devlab.cvs.branches.BranchStatusBarWidgetFactory", factory.getAttribute("implementation"))
+    }
+
+    /** The root element of the packaged plugin descriptor. */
+    private fun descriptor(): Element =
+        DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(InputSource(StringReader(jarEntry("META-INF/plugin.xml")))).documentElement
+
     private fun Element.children(tag: String): List<Element> =
         (0 until childNodes.length).map { childNodes.item(it) }.filterIsInstance<Element>().filter { it.tagName == tag }
 

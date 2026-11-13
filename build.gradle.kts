@@ -107,6 +107,11 @@ intellijPlatform {
 
 kotlin {
     jvmToolchain(25)
+    compilerOptions {
+        // Without compatibility bridges a Kotlin class implementing a platform interface does not override and call
+        // the interface's deprecated default methods (StatusBarWidget.getPresentation(PlatformType)).
+        jvmDefault.set(org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode.NO_COMPATIBILITY)
+    }
 }
 
 // The plugin's own descriptor entries (actions, extensions) live in a fragment that is merged into OpenCVS's

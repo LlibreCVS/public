@@ -5,6 +5,9 @@
 <idea-plugin>
   <extensions defaultExtensionNs="com.intellij">
     <notificationGroup id="IntelliJCVS" displayType="BALLOON"/>
+    <statusBarWidgetFactory id="IntelliJCVS.BranchWidget"
+                            implementation="by.devlab.cvs.branches.BranchStatusBarWidgetFactory"/>
+    <vcs.branchStateProvider implementation="by.devlab.cvs.branches.CvsBranchStateProvider"/>
   </extensions>
 
   <actions>
@@ -12,6 +15,10 @@
             description="Put a CVS tag on the latest trunk revisions of the files of the selected commit">
       <add-to-group group-id="CommittedChangesToolbar" anchor="last"/>
       <add-to-group group-id="ChangesViewPopupMenu" anchor="last"/>
+    </action>
+    <action id="IntelliJCVS.BranchWidget" class="by.devlab.cvs.branches.BranchToolbarAction" text="CVS Branch"
+            description="The CVS branch, tag or date of the project's working copies">
+      <add-to-group group-id="MainToolbarLeft" anchor="before" relative-to-action="MainToolbarGeneralActionsGroup"/>
     </action>
   </actions>
 </idea-plugin>
