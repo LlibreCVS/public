@@ -28,10 +28,19 @@ interface BranchPrompts {
     /** The new branch's name and whether to switch to it, for [roots] (root names), or null when cancelled. */
     fun askNewBranch(project: Project, roots: List<String>): NewBranchRequest?
 
+    /** What to do with [branch], already in the lists of [roots] (root names): use, recreate or cancel (decision 10). */
+    fun askExistingBranch(project: Project, branch: String, roots: List<String>): ExistingBranchChoice
+
+    /** The second confirmation of Recreate: [warning] names the roots and what happens to commits on [branch]. */
+    fun confirmRecreate(project: Project, branch: String, warning: String): Boolean
+
     companion object {
         val UI: BranchPrompts = DialogPrompts
     }
 }
+
+/** The answer to a new branch name that some roots already have (design decision 10). */
+enum class ExistingBranchChoice { USE, RECREATE, CANCEL }
 
 /** What New Branch… asks: the branch [name] (trimmed) and whether to [switch] the roots to it. */
 data class NewBranchRequest(val name: String, val switch: Boolean)
@@ -85,6 +94,30 @@ private object DialogPrompts : BranchPrompts {
     override fun askNewBranch(project: Project, roots: List<String>): NewBranchRequest? = onUiThread {
         val dialog = NewBranchDialog(project, roots)
         if (dialog.showAndGet()) NewBranchRequest(dialog.branchName, dialog.switchToBranch) else null
+    }
+
+    override fun askExistingBranch(project: Project, branch: String, roots: List<String>): ExistingBranchChoice = onUiThread {
+        val answer = Messages.showDialog(
+            project,
+            "Branch $branch already exists in:\n${roots.joinToString("\n")}\n\n" +
+                "Use Existing creates it only in the other roots. Recreate moves the existing branch to the revisions " +
+                "these roots hold.",
+            "Branch $branch Exists",
+            arrayOf("Use Existing", "Recreate…", Messages.getCancelButton()),
+            0,
+            Messages.getQuestionIcon(),
+        )
+        when (answer) {
+            0 -> ExistingBranchChoice.USE
+            1 -> ExistingBranchChoice.RECREATE
+            else -> ExistingBranchChoice.CANCEL
+        }
+    }
+
+    override fun confirmRecreate(project: Project, branch: String, warning: String): Boolean = onUiThread {
+        Messages.showOkCancelDialog(
+            project, warning, "Recreate Branch $branch", "Recreate", Messages.getCancelButton(), Messages.getWarningIcon(),
+        ) == Messages.OK
     }
 
     /** Runs [ask] on the UI thread and waits for its answer. */

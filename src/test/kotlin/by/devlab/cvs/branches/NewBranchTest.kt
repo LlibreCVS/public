@@ -9,6 +9,8 @@ import com.intellij.testFramework.junit5.fixture.tempPathFixture
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.RegisterExtension
@@ -67,7 +69,114 @@ class NewBranchTest {
         assertRemembered(a, b, "BR_NEW")
     }
 
+    @Test
+    @DisplayName("Existing branch used")
+    fun existingBranchUsed() {
+        val (a, b) = rootsWithFix("used")
+        val fixBefore = session.tagOf("${a.fileName}/$ONE", "BR_FIX")
+        prompts.newBranch = NewBranchRequest("BR_FIX", switch = false)
+        prompts.existing = ExistingBranchChoice.USE
+
+        val report = creator().create(listOf(a, b))
+
+        println("${prompts.asked}\n${report?.text()}")
+        assertEquals(listOf("new branch in [${a.fileName}, ${b.fileName}]", "existing BR_FIX in [${a.fileName}]"), prompts.asked)
+        assertBranchExists(b, "BR_FIX")
+        assertEquals(fixBefore, session.tagOf("${a.fileName}/$ONE", "BR_FIX"))
+        assertSticky(a, "")
+        assertSticky(b, "")
+        assertEquals(listOf(b.fileName.toString()), report!!.switched)
+        assertEquals(listOf(a.fileName.toString() to "already has BR_FIX"), report.skipped)
+    }
+
+    @Test
+    @DisplayName("Existing branch used, with the switch option on")
+    fun existingBranchUsedSwitching() {
+        val (a, b) = rootsWithFix("usedswitch")
+        prompts.newBranch = NewBranchRequest("BR_FIX", switch = true)
+        prompts.existing = ExistingBranchChoice.USE
+
+        val report = creator().create(listOf(a, b))
+
+        println("${prompts.asked}\n${report?.text()}")
+        assertSticky(a, "BR_FIX")
+        assertSticky(b, "BR_FIX")
+    }
+
+    @Test
+    @DisplayName("Existing branch recreated")
+    fun existingBranchRecreated() {
+        val (a, b) = rootsWithFix("recreated")
+        prompts.newBranch = NewBranchRequest("BR_FIX", switch = false)
+        prompts.existing = ExistingBranchChoice.RECREATE
+        prompts.confirmRecreate = true
+
+        val report = creator().create(listOf(a, b))
+
+        println("${prompts.asked}\n${report?.text()}")
+        assertTrue(prompts.asked.any { it.startsWith("recreate BR_FIX: ") && it.contains("lose the branch name") }, "${prompts.asked}")
+        val fix = session.checkout("bob", a.fileName.toString(), session.newDirectory("recreated-fix"), tag = "BR_FIX")
+        assertEquals("one on the trunk\n", TestData.text(fix.resolve(ONE), Charsets.UTF_8))
+        assertBranchExists(a, "BR_FIX")
+        assertBranchExists(b, "BR_FIX")
+    }
+
+    @Test
+    @DisplayName("Existing branch cancelled")
+    fun existingBranchCancelled() {
+        for ((prefix, choice) in listOf("cancelfirst" to ExistingBranchChoice.CANCEL, "cancelsecond" to ExistingBranchChoice.RECREATE)) {
+            val (a, b) = rootsWithFix(prefix)
+            val fixBefore = session.tagOf("${a.fileName}/$ONE", "BR_FIX")
+            prompts.asked.clear()
+            prompts.newBranch = NewBranchRequest("BR_FIX", switch = true)
+            prompts.existing = choice
+            prompts.confirmRecreate = false
+
+            val report = creator().create(listOf(a, b))
+
+            println("$prefix: ${prompts.asked}")
+            assertEquals(if (choice == ExistingBranchChoice.CANCEL) 2 else 3, prompts.asked.size, "${prompts.asked}")
+            assertNull(report, prefix)
+            assertEquals(fixBefore, session.tagOf("${a.fileName}/$ONE", "BR_FIX"), prefix)
+            assertNull(session.tagOf("${b.fileName}/$ONE", "BR_FIX"), prefix)
+            assertSticky(a, "")
+            assertSticky(b, "")
+        }
+    }
+
+    // Review focus: a stale list makes CVS refuse the existing branch; the root fails and the branch is not moved.
+    @Test
+    @DisplayName("Stale list reports the root as failed")
+    fun staleListReportsTheRootAsFailed() {
+        val (_, b) = roots("stale")
+        session.branch(b.fileName.toString(), "BR_FIX")
+        val fixBefore = session.tagOf("${b.fileName}/$ONE", "BR_FIX")
+        prompts.newBranch = NewBranchRequest("BR_FIX", switch = false)
+
+        val report = creator().create(listOf(b))
+
+        println("${prompts.asked}\n${report?.text()}")
+        assertEquals(listOf(b.fileName.toString()), report!!.failed.map { it.first })
+        assertTrue(report.switched.isEmpty(), "${report.switched}")
+        assertEquals(fixBefore, session.tagOf("${b.fileName}/$ONE", "BR_FIX"))
+    }
+
     private fun creator() = BranchCreator(project.get(), prompts)
+
+    /**
+     * [roots] where `BR_FIX` is branched on `<prefix>-a` at revision 1.1 of [ONE], which is 1.2 in alice's working copy
+     * (`one on the trunk`); only `<prefix>-a`'s list has `BR_FIX`.
+     */
+    private fun rootsWithFix(prefix: String): Pair<Path, Path> {
+        val (a, b) = roots(prefix)
+        session.branch(a.fileName.toString(), "BR_FIX")
+        TestData.edit(a.resolve(ONE), "one on the trunk\n".toByteArray())
+        session.commit(project.get(), listOf(a.resolve(ONE)), "alice changes one on the trunk")
+        assertEquals("1.2", session.revision(a.resolve(ONE)))
+        BranchListService.getInstance(project.get()).set(a, listOf("BR_FIX", "BR_RELEASE"), LOADED_AT)
+        refreshed(project.get())
+        return a to b
+    }
 
     /**
      * Two modules `<prefix>-a` and `<prefix>-b` with [ONE] and [TWO], checked out side by side as alice, mapped to CVS,
