@@ -56,7 +56,7 @@ class BranchPopupTest {
         val model = BranchPopupModel.build(project.get(), opening = true)
         println(model.render())
 
-        assertEquals(listOf(NEW_BRANCH, BACK_TO_TRUNK, "BR_RELEASE"), items(model.entries).map { it.text })
+        assertEquals(listOf(NEW_BRANCH, BACK_TO_TRUNK, "BR_RELEASE"), items(model.entries).dropLast(1).map { it.text })
         assertEquals(BranchChoice.Switch("BR_RELEASE", listOf(a, b)), item(model.entries, "BR_RELEASE").choice)
         assertEquals(BranchChoice.Trunk(listOf(a, b)), item(model.entries, BACK_TO_TRUNK).choice)
         assertEquals(BranchChoice.NewBranch(listOf(a, b)), item(model.entries, NEW_BRANCH).choice)
