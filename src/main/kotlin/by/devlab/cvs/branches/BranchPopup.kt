@@ -84,7 +84,7 @@ object BranchPopup {
             }
             is BranchChoice.Switch -> BranchSwitcher(project).start(SwitchTarget.Branch(choice.branch), choice.roots)
             is BranchChoice.Trunk -> BranchSwitcher(project).start(SwitchTarget.Trunk, choice.roots)
-            is BranchChoice.NewBranch -> Unit
+            is BranchChoice.NewBranch -> BranchCreator(project).start(choice.roots)
         }
     }
 

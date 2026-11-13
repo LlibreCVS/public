@@ -75,7 +75,7 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
     fun plan(target: SwitchTarget, roots: List<Path>): List<Step> {
         val lists = BranchListService.getInstance(project)
         return roots.map { root ->
-            val name = root.fileName?.toString() ?: root.toString()
+            val name = rootName(root)
             val state = BranchState.read(root)
             val skip = when (target) {
                 is SwitchTarget.Branch -> when {
@@ -101,33 +101,14 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         val switched = ArrayList<String>()
         val conflicts = ArrayList<String>()
         val failed = ArrayList<Pair<String, String>>()
-        val readOnly = CvsConfiguration.getInstance(project).MAKE_NEW_FILES_READONLY
         for (step in steps.filter { it.skip == null }) {
-            val updated = UpdatedFiles.create()
-            val settings = when (target) {
-                is SwitchTarget.Branch -> UpdateByBranchUpdateSettings(target.name, readOnly)
-                SwitchTarget.Trunk -> TrunkUpdateSettings(readOnly)
-            }
-            val files = arrayOf(VcsUtil.getFilePath(step.root.toFile(), true))
-            val error = try {
-                val handler = CommandCvsHandler.createUpdateHandler(files, settings, project, updated)
-                // What CvsUpdateEnvironment does: the processor sorts CVS's per-file answers into the update groups.
-                handler.addCvsListener(UpdatedFilesProcessor(updated))
-                CvsRunner.run(project, handler)
-            } catch (e: Exception) {
-                e.message ?: e.toString()
-            }
-            CvsRunner.refresh(project, step.root)
-            if (error != null) {
-                failed += step.name to error
+            val result = update(step.root, target)
+            if (result.error != null) {
+                failed += step.name to result.error
                 continue
             }
             switched += step.name
-            val conflicting = listOf(FileGroup.MERGED_WITH_CONFLICT_ID, CvsUpdatePolicy.BINARY_MERGED_ID)
-                .flatMap { updated.getGroupById(it)?.files.orEmpty() }
-            conflicting.sorted().forEach { file ->
-                conflicts += relative(step, file)
-            }
+            conflicts += result.conflicts
         }
         val title = when (target) {
             is SwitchTarget.Branch -> "Switch to ${target.name}"
@@ -136,6 +117,37 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         val report = BranchReport(title, switched, steps.mapNotNull { step -> step.skip?.let { step.name to it } }, conflicts, failed)
         CvsRunner.notify(project, report)
         return report
+    }
+
+    /** What updating one root did: the CVS [error], or null, and the files left with [conflicts] (`<root>/<path>`). */
+    internal data class UpdateResult(val error: String?, val conflicts: List<String>)
+
+    /**
+     * Updates the working copy [root] to [target] with OpenCVS's update handler (`update -r` or `update -A`, design
+     * decision 14) and reloads it from disk.
+     */
+    internal fun update(root: Path, target: SwitchTarget): UpdateResult {
+        val readOnly = CvsConfiguration.getInstance(project).MAKE_NEW_FILES_READONLY
+        val updated = UpdatedFiles.create()
+        val settings = when (target) {
+            is SwitchTarget.Branch -> UpdateByBranchUpdateSettings(target.name, readOnly)
+            SwitchTarget.Trunk -> TrunkUpdateSettings(readOnly)
+        }
+        val files = arrayOf(VcsUtil.getFilePath(root.toFile(), true))
+        val error = try {
+            val handler = CommandCvsHandler.createUpdateHandler(files, settings, project, updated)
+            // What CvsUpdateEnvironment does: the processor sorts CVS's per-file answers into the update groups.
+            handler.addCvsListener(UpdatedFilesProcessor(updated))
+            CvsRunner.run(project, handler)
+        } catch (e: Exception) {
+            e.message ?: e.toString()
+        }
+        CvsRunner.refresh(project, root)
+        val conflicts = listOf(FileGroup.MERGED_WITH_CONFLICT_ID, CvsUpdatePolicy.BINARY_MERGED_ID)
+            .flatMap { updated.getGroupById(it)?.files.orEmpty() }
+            .sorted()
+            .map { relative(root, it) }
+        return UpdateResult(error, conflicts)
     }
 
     /** Switches [roots] to [target] in a background task (called from the popup on the UI thread). */
@@ -169,14 +181,19 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
     }
 
     /** [file] (a path CVS reported) as `<root name>/<path below the root>`. */
-    private fun relative(step: Step, file: String): String {
+    private fun relative(root: Path, file: String): String {
         val path = try {
             Path.of(file)
         } catch (_: InvalidPathException) {
             return file
         }
-        val below = if (path.isAbsolute && path.startsWith(step.root)) step.root.relativize(path) else path
-        return "${step.name}/${below.toString().replace('\\', '/')}"
+        val below = if (path.isAbsolute && path.startsWith(root)) root.relativize(path) else path
+        return "${rootName(root)}/${below.toString().replace('\\', '/')}"
+    }
+
+    companion object {
+        /** The name a root is reported by: its directory's name. */
+        fun rootName(root: Path): String = root.fileName?.toString() ?: root.toString()
     }
 
     /** The update settings of a switch back to the trunk: `update -A`, reset sticky tags (design decision 14). */
