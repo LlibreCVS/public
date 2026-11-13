@@ -365,7 +365,7 @@ class BranchStateService(private val project: Project) : Disposable {
     private fun discoverRoots(): List<Path> {
         discoveries.incrementAndGet()
         val vcsName = CvsVcs2.getKey().name
-        val mapped = ProjectLevelVcsManager.getInstance(project).directoryMappings
+        val mapped = ProjectLevelVcsManager.getInstance(project).getDirectoryMappings()
             .filter { it.vcs == vcsName }
             .mapNotNull { mapping -> pathOf(mapping.directory.ifEmpty { project.basePath.orEmpty() }) }
         mappedDirs = mapped
