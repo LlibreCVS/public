@@ -42,6 +42,7 @@ class BranchCreator(private val project: Project, private val prompts: BranchPro
         val switcher = BranchSwitcher(project, prompts)
         val existing = roots.filter { lists.list(it)?.branches?.contains(branch) == true }
         var recreate = false
+        var partialSkipped = emptySet<Path>()
         if (existing.isNotEmpty()) {
             when (prompts.askExistingBranch(project, branch, existing.map(BranchSwitcher::rootName))) {
                 ExistingBranchChoice.CANCEL -> return null
@@ -50,8 +51,12 @@ class BranchCreator(private val project: Project, private val prompts: BranchPro
                     recreate = true
                 }
                 ExistingBranchChoice.USE -> if (request.switch) {
-                    // These roots switch to a branch that already has its own revisions (decisions 8, 11).
-                    val changes = switcher.uncommittedChanges(existing.map { BranchSwitcher.Step(it, BranchSwitcher.rootName(it), null) })
+                    // These roots switch to a branch that already has its own revisions: a partial branch is confirmed
+                    // first, then the uncommitted changes (decisions 8, 11, 20).
+                    val steps = switcher.confirmPartial(branch, existing.map { BranchSwitcher.Step(it, BranchSwitcher.rootName(it), null) })
+                        ?: return null
+                    partialSkipped = steps.filter { it.skip != null }.mapTo(HashSet()) { it.root }
+                    val changes = switcher.uncommittedChanges(steps.filter { it.skip == null })
                     if (changes.isNotEmpty() && !prompts.confirmSwitch(project, branch, changes)) return null
                 }
             }
@@ -66,6 +71,10 @@ class BranchCreator(private val project: Project, private val prompts: BranchPro
         for (root in roots) {
             val name = BranchSwitcher.rootName(root)
             val use = root in existing && !recreate
+            if (use && root in partialSkipped) {
+                skipped += name to BranchSwitcher.PARTIAL
+                continue
+            }
             if (use && !request.switch) {
                 skipped += name to "already has $branch"
                 continue

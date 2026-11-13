@@ -104,7 +104,24 @@ private object DialogPrompts : BranchPrompts {
         project: Project,
         branch: String,
         coverage: Map<String, BranchListService.Coverage>,
-    ): PartialBranchChoice = TODO()
+    ): PartialBranchChoice = onUiThread {
+        val roots = coverage.entries.joinToString("\n") { (root, it) -> "$root: ${it.files} of ${it.total} files" }
+        val answer = Messages.showDialog(
+            project,
+            "Branch $branch covers only part of these roots:\n$roots\n\n" +
+                "Switching them removes their other files from the working copy. The files stay in the repository and " +
+                "come back with Back to Trunk.",
+            "Switch to $branch",
+            arrayOf("Switch", "Skip These Roots", Messages.getCancelButton()),
+            1,
+            Messages.getWarningIcon(),
+        )
+        when (answer) {
+            0 -> PartialBranchChoice.SWITCH
+            1 -> PartialBranchChoice.SKIP
+            else -> PartialBranchChoice.CANCEL
+        }
+    }
 
     override fun askNewBranch(project: Project, roots: List<String>): NewBranchRequest? = onUiThread {
         val dialog = NewBranchDialog(project, roots)

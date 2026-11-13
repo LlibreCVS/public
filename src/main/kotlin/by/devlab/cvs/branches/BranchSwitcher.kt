@@ -96,7 +96,9 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
      * Switches [roots] to [target] on the calling thread (never the UI thread), shows the report and returns it.
      */
     fun switch(target: SwitchTarget, roots: List<Path>): BranchReport? {
-        val steps = plan(target, roots)
+        val planned = plan(target, roots)
+        // A branch on part of a root is confirmed first (design decision 20); Back to Trunk is not affected.
+        val steps = if (target is SwitchTarget.Branch) confirmPartial(target.name, planned) ?: return null else planned
         // Uncommitted changes are confirmed before anything changes (design decision 8); without any, nothing is asked.
         val changes = uncommittedChanges(steps.filter { it.skip == null })
         if (changes.isNotEmpty() && !prompts.confirmSwitch(project, target.text, changes)) return null
@@ -162,6 +164,25 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
     }
 
     /**
+     * Asks about the switched roots of [steps] that [branch] covers only in part by their remembered counts (design
+     * decision 20): the steps unchanged for Switch, with those roots skipped for Skip, null for Cancel. Nothing is asked
+     * when no root is partial.
+     */
+    internal fun confirmPartial(branch: String, steps: List<Step>): List<Step>? {
+        val lists = BranchListService.getInstance(project)
+        val partial = steps.filter { it.skip == null }.mapNotNull { step -> lists.list(step.root)?.partial(branch)?.let { step to it } }
+        if (partial.isEmpty()) return steps
+        return when (prompts.confirmPartialBranch(project, branch, partial.associate { (step, coverage) -> step.name to coverage })) {
+            PartialBranchChoice.SWITCH -> steps
+            PartialBranchChoice.SKIP -> {
+                val skipped = partial.map { it.first }.toSet()
+                steps.map { if (it in skipped) it.copy(skip = PARTIAL) else it }
+            }
+            PartialBranchChoice.CANCEL -> null
+        }
+    }
+
+    /**
      * The number of changed files per root of [steps] (root name → count, roots without changes left out), from the
      * IDE's change list after it took in the current disk state; no server is contacted (design decision 8).
      */
@@ -194,6 +215,9 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
     }
 
     companion object {
+        /** Why a root that a branch covers only in part was skipped (design decision 20). */
+        const val PARTIAL = "branch covers only part of the root"
+
         /** The name a root is reported by: its directory's name. */
         fun rootName(root: Path): String = root.fileName?.toString() ?: root.toString()
     }

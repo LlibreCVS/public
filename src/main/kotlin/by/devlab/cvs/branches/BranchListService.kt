@@ -49,7 +49,11 @@ class BranchListService(private val project: Project) : PersistentStateComponent
         val coverage: Map<String, Int> = emptyMap(),
     ) {
         /** How much of the root [branch] covers when it covers only part of it, or null for the whole root. */
-        fun partial(branch: String): Coverage? = null
+        fun partial(branch: String): Coverage? {
+            val total = files ?: return null
+            val covered = coverage[branch] ?: return null
+            return if (covered < total) Coverage(covered, total) else null
+        }
     }
 
     /** A branch carried by [files] of the root's [total] files. */
@@ -72,6 +76,23 @@ class BranchListService(private val project: Project) : PersistentStateComponent
 
         @get:XCollection(style = XCollection.Style.v2, elementName = "branch", valueAttributeName = "name")
         var branches: MutableList<String> = ArrayList()
+
+        /** The number of the root's files, or -1 when unknown (a list stored before the counts). */
+        @get:Attribute
+        var files: Int = -1
+
+        @get:XCollection(style = XCollection.Style.v2)
+        var counts: MutableList<BranchCount> = ArrayList()
+    }
+
+    /** How many files of a root carry [branch]. */
+    @Tag("count")
+    class BranchCount {
+        @get:Attribute
+        var branch: String = ""
+
+        @get:Attribute
+        var files: Int = 0
     }
 
     /** One load runs at a time; the roots of a load are loaded one after another. */
@@ -154,9 +175,9 @@ class BranchListService(private val project: Project) : PersistentStateComponent
 
     private fun loadRoot(root: Path) {
         try {
-            val branches = BranchLog.branches(project, root)
+            val log = BranchLog.read(project, root)
             synchronized(lock) {
-                lists[root] = BranchList(branches.sorted(), System.currentTimeMillis())
+                lists[root] = BranchList(log.branches.sorted(), System.currentTimeMillis(), log.files, log.coverage)
                 loading.remove(root)
             }
         } catch (e: Exception) {
@@ -181,6 +202,13 @@ class BranchListService(private val project: Project) : PersistentStateComponent
                     this.path = path.toString()
                     loadedAt = list.loadedAt
                     branches = list.branches.toMutableList()
+                    files = list.files ?: -1
+                    counts = list.coverage.entries.sortedBy { it.key }.mapTo(ArrayList()) { (name, count) ->
+                        BranchCount().apply {
+                            branch = name
+                            files = count
+                        }
+                    }
                 }
             }
         }
@@ -191,7 +219,9 @@ class BranchListService(private val project: Project) : PersistentStateComponent
             lists.clear()
             for (root in state.roots) {
                 val path = BranchStateService.pathOf(root.path) ?: continue
-                lists[path] = BranchList(root.branches.distinct().sorted(), root.loadedAt)
+                val files = root.files.takeIf { it >= 0 }
+                val coverage = if (files == null) emptyMap() else root.counts.associate { it.branch to it.files }
+                lists[path] = BranchList(root.branches.distinct().sorted(), root.loadedAt, files, coverage)
             }
         }
     }
@@ -213,17 +243,23 @@ class BranchListService(private val project: Project) : PersistentStateComponent
     }
 }
 
-/** Reads the branch names of a working-copy root from the server (design decisions 13, 18). */
+/** Reads the branch names of a working-copy root from the server (design decisions 13, 18, 20). */
 internal object BranchLog {
+
+    /**
+     * What one `log` of a root gives: its [branches], the number of its [files] and, per branch, how many of them carry
+     * it ([coverage]). A file only in the repository's Attic (removed on the trunk) is not one of the root's files.
+     */
+    class Result(val branches: Set<String>, val files: Int, val coverage: Map<String, Int>)
 
     /**
      * The branches of the working copy [root]: a header-only `log` over the root through OpenCVS's [LogOperation], as
      * the branch chooser runs it, keeping only the symbolic names on branch revision numbers. Throws on any CVS error.
      */
-    fun branches(project: Project, root: Path): Set<String> {
+    fun read(project: Project, root: Path): Result {
         val operation = BranchLogOperation(root)
         CvsRunner.run(project, CommandCvsHandler("Load CVS branches", operation, true))?.let { throw IllegalStateException(it) }
-        return operation.branches
+        return Result(operation.branches, operation.files, operation.coverage)
     }
 
     /**
@@ -244,12 +280,23 @@ internal object BranchLog {
     /** OpenCVS's header-only log, keeping the names on branch revisions from each file's [LogInformation]. */
     private class BranchLogOperation(root: Path) : LogOperation(listOf(VcsUtil.getFilePath(root.toFile(), true))) {
         val branches = HashSet<String>()
+        var files = 0
+        val coverage = HashMap<String, Int>()
 
         override fun fileInfoGenerated(info: Any?) {
             super.fileInfoGenerated(info)
             if (info is LogInformation) {
-                info.allSymbolicNames.filter { isBranchRevision(it.revision) }.forEach { branches += it.name }
+                val names = info.allSymbolicNames.filter { isBranchRevision(it.revision) }.map { it.name }.toSet()
+                branches += names
+                if (!inAttic(info)) {
+                    files++
+                    names.forEach { coverage.merge(it, 1, Int::plus) }
+                }
             }
         }
+
+        /** Whether the file is in the repository's Attic: removed on the trunk, so not in a trunk working copy. */
+        private fun inAttic(info: LogInformation): Boolean =
+            info.rcsFileName?.replace('\\', '/')?.contains("/Attic/") == true
     }
 }
