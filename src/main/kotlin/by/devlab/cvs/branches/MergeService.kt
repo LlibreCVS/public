@@ -198,10 +198,24 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
     private fun normalized(path: Path): Path = path.toAbsolutePath().normalize()
 
     /** Complete Merge: moves [root]'s merge point now and reports it (decision 8). */
-    fun complete(root: Path): BranchReport? = throw NotImplementedError()
+    fun complete(root: Path): BranchReport? {
+        val report = moveMergePoint(root) ?: return null
+        CvsRunner.notify(project, report)
+        return report
+    }
 
     /** Forget Merge: forgets [root]'s unfinished merge without moving its merge point and reports it (decision 8). */
-    fun forget(root: Path): BranchReport? = throw NotImplementedError()
+    fun forget(root: Path): BranchReport? {
+        val merge = unfinished(root) ?: return null
+        stuck.remove(key(root))
+        drop(root)
+        val report = BranchReport(
+            "Merge of ${merge.source} into ${merge.target}", listOf(BranchSwitcher.rootName(root)), emptyList(), emptyList(),
+            emptyList(), switchedLabel = "Forgotten, ${merge.mergedTag} not moved",
+        )
+        CvsRunner.notify(project, report)
+        return report
+    }
 
     /** Drops [root]'s unfinished merge. */
     fun drop(root: Path) {

@@ -87,8 +87,12 @@ object BranchPopup {
             is BranchChoice.Trunk -> BranchSwitcher(project).start(SwitchTarget.Trunk, choice.roots)
             is BranchChoice.NewBranch -> BranchCreator(project).start(choice.roots)
             is BranchChoice.Merge -> BranchMerger(project).start(choice.source, choice.roots)
-            is BranchChoice.CompleteMerge -> TODO("task 3.2")
-            is BranchChoice.ForgetMerge -> TODO("task 3.2")
+            is BranchChoice.CompleteMerge -> BranchOperations.getInstance(project).queue("Completing CVS merge") {
+                MergeService.getInstance(project).complete(choice.root)
+            }
+            is BranchChoice.ForgetMerge -> BranchOperations.getInstance(project).queue("Forgetting CVS merge") {
+                MergeService.getInstance(project).forget(choice.root)
+            }
         }
     }
 

@@ -75,6 +75,8 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
         const val MERGE_TRUNK = "Merge Trunk into Current"
         const val SWITCH = "Switch"
         const val MERGE_INTO_CURRENT = "Merge into Current"
+        const val COMPLETE_MERGE = "Complete Merge"
+        const val FORGET_MERGE = "Forget Merge"
         const val LOADING = "Loading branches…"
         const val REFRESH = "Refresh Branch List"
 
@@ -94,11 +96,14 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
             val lists = roots.associate { it.path to service.list(it.path) }
             // While a branch operation runs, only Refresh Branch List can be chosen (design decision 21).
             val busy = BranchOperations.getInstance(project).isRunning
+            // The unfinished merges are re-checked for rolled-back files first (cvs-branch-merge decision 9), locally.
+            val merges = MergeService.getInstance(project).apply { refresh(fresh = false) }
 
             val entries = ArrayList<Entry>()
             if (busy) entries += Item(BranchOperations.IN_PROGRESS, null, enabled = false)
             if (roots.size == 1) {
                 val root = roots.single()
+                entries += mergeEntries(merges, root.path, busy)
                 entries += rootEntries(roots, lists[root.path]?.branches.orEmpty(), busy)
                 entries += statusEntries(service, root.path, root.path in loading, lists[root.path] != null)
             } else {
@@ -113,7 +118,8 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
                 entries += Separator("Roots")
                 for (root in roots) {
                     val list = lists[root.path]?.branches.orEmpty()
-                    entries += Submenu("${root.name}: ${root.status.text}", rootEntries(listOf(root), list, busy) +
+                    entries += Submenu("${root.name}: ${root.status.text}", mergeEntries(merges, root.path, busy) +
+                        rootEntries(listOf(root), list, busy) +
                         statusEntries(service, root.path, root.path in loading, lists[root.path] != null))
                 }
             }
@@ -150,6 +156,22 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
                 entries += Submenu(branch, actions, current = current)
             }
             return entries
+        }
+
+        /**
+         * [root]'s unfinished merge (cvs-branch-merge decision 8): `merging <SRC>: N files left`, Complete Merge and
+         * Forget Merge, then a separator; nothing without one. When [busy], the actions are disabled.
+         */
+        private fun mergeEntries(merges: MergeService, root: Path, busy: Boolean): List<Entry> {
+            val merge = merges.unfinished(root) ?: return emptyList()
+            val source = if (merge.source == MergeService.TRUNK) "the trunk" else merge.source
+            val left = merge.files.size
+            return listOf(
+                Item("merging $source: $left ${if (left == 1) "file" else "files"} left", null, enabled = false),
+                Item(COMPLETE_MERGE, BranchChoice.CompleteMerge(root), enabled = !busy),
+                Item(FORGET_MERGE, BranchChoice.ForgetMerge(root), enabled = !busy),
+                Separator(),
+            )
         }
 
         /**
