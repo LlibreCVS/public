@@ -60,6 +60,12 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
     /** Every root with an unfinished merge. */
     fun roots(): List<Path> = synchronized(lock) { merges.keys.toList() }
 
+    /** Takes [files], committed from the IDE, out of the unfinished merges (decision 9). */
+    fun committed(files: Collection<Path>): Unit = throw NotImplementedError()
+
+    /** Takes rolled-back files out of the unfinished merges (decision 9). Call it off the UI thread. */
+    fun refresh(): Unit = throw NotImplementedError()
+
     /** Drops [root]'s unfinished merge. */
     fun drop(root: Path) {
         val removed = synchronized(lock) { merges.remove(key(root)) }
