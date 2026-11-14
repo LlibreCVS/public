@@ -106,8 +106,18 @@ private object DialogPrompts : BranchPrompts {
         ) == Messages.OK
     }
 
-    override fun confirmMerge(project: Project, source: String, changes: Map<String, Int>): Boolean =
-        throw NotImplementedError()
+    override fun confirmMerge(project: Project, source: String, changes: Map<String, Int>): Boolean = onUiThread {
+        val roots = changes.entries.joinToString("\n") { (root, count) -> "$root: $count changed ${if (count == 1) "file" else "files"}" }
+        Messages.showOkCancelDialog(
+            project,
+            "These roots have uncommitted changes:\n$roots\n\nThe merge of $source mixes its changes with them, and the " +
+                "roots are also updated to their latest revisions. Nothing is committed.",
+            "Merge $source into Current",
+            "Merge",
+            Messages.getCancelButton(),
+            Messages.getWarningIcon(),
+        ) == Messages.OK
+    }
 
     override fun confirmPartialBranch(
         project: Project,

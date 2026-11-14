@@ -59,6 +59,11 @@ class BranchMerger(private val project: Project, private val prompts: BranchProm
     /** Merges [source] into [roots] on the calling thread (never the UI thread), shows the report and returns it. */
     fun merge(source: SwitchTarget, roots: List<Path>): BranchReport? {
         val steps = plan(source, roots)
+        // Uncommitted changes are confirmed before anything, even the snapshot tag, happens (decision 6).
+        val files = LocalChanges.files(project, steps.filter { it.skip == null }.map { it.root })
+        val changes = steps.filter { it.skip == null && files[it.root].orEmpty().isNotEmpty() }
+            .associate { it.name to files[it.root].orEmpty().size }
+        if (changes.isNotEmpty() && !prompts.confirmMerge(project, source.text, changes)) return null
         val merged = ArrayList<String>()
         val conflicts = ArrayList<String>()
         val failed = ArrayList<Pair<String, String>>()
