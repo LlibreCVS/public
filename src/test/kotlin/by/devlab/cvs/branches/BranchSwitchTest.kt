@@ -2,14 +2,10 @@ package by.devlab.cvs.branches
 
 import by.devlab.cvs.CvsTestSession
 import by.devlab.cvs.CvsTestSession.UpdateOptions
-import by.devlab.cvs.TestCvsServer
 import by.devlab.cvs.TestData
 import by.devlab.cvs.branches.BranchFixtures.refreshed
-import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration
 import com.intellij.notification.Notification
-import com.intellij.notification.Notifications
 import com.intellij.openapi.progress.ProcessCanceledException
-import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
@@ -19,13 +15,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.RegisterExtension
-import org.netbeans.lib.cvsclient.connection.PServerPasswordScrambler
-import java.net.InetAddress
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption
-import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 /**
@@ -410,39 +401,9 @@ class BranchSwitchTest {
         return roots[0] to roots[1]
     }
 
-    /** Points every `CVS/Root` of [root] at a closed local port, with a password for it so that no login is asked. */
-    private fun unreachable(root: Path) {
-        val port = ServerSocket(0, 50, InetAddress.getLoopbackAddress()).use { it.localPort }
-        val cvsRoot = ":pserver:alice@127.0.0.1:$port/cvsroot"
-        Files.walk(root).use { paths ->
-            paths.filter { it.fileName.toString() == "Root" && it.parent.fileName.toString() == "CVS" }
-                .forEach { Files.writeString(it, "$cvsRoot\n") }
-        }
-        // OpenCVS reads CVS/Root through the VFS, so the IDE must see the new files.
-        BranchFixtures.virtualFile(root).refresh(false, true)
-        val scrambled = PServerPasswordScrambler.getInstance().scramble(TestCvsServer.PASSWORD)
-        val passwordFile = Path.of(CvsApplicationLevelConfiguration.getInstance().PATH_TO_PASSWORD_FILE)
-        Files.writeString(passwordFile, "$cvsRoot $scrambled\n", StandardOpenOption.APPEND)
-    }
+    private fun unreachable(root: Path) = BranchFixtures.unreachable(root)
 
-    /** Runs [action] and returns its result with the one IntelliJCVS notification it shows. */
-    private fun <T> notified(action: () -> T): Pair<T, Notification> {
-        val shown = LinkedBlockingQueue<Notification>()
-        val disposable = Disposer.newDisposable()
-        try {
-            project.get().messageBus.connect(disposable).subscribe(Notifications.TOPIC, object : Notifications {
-                override fun notify(notification: Notification) {
-                    if (notification.groupId == "IntelliJCVS") shown += notification
-                }
-            })
-            val result = action()
-            val notification = checkNotNull(shown.poll(60, TimeUnit.SECONDS)) { "no IntelliJCVS notification" }
-            assertTrue(shown.poll(1, TimeUnit.SECONDS) == null, "more than one notification")
-            return result to notification
-        } finally {
-            Disposer.dispose(disposable)
-        }
-    }
+    private fun <T> notified(action: () -> T): Pair<T, Notification> = BranchFixtures.notified(project.get(), action)
 
     private fun assertSticky(root: Path, tag: String) {
         val files = session.workingFiles(root)

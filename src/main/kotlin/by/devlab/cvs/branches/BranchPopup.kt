@@ -86,7 +86,7 @@ object BranchPopup {
             is BranchChoice.Switch -> BranchSwitcher(project).start(SwitchTarget.Branch(choice.branch), choice.roots)
             is BranchChoice.Trunk -> BranchSwitcher(project).start(SwitchTarget.Trunk, choice.roots)
             is BranchChoice.NewBranch -> BranchCreator(project).start(choice.roots)
-            is BranchChoice.Merge -> TODO("BranchMerger arrives with task 2.1")
+            is BranchChoice.Merge -> BranchMerger(project).start(choice.source, choice.roots)
         }
     }
 
