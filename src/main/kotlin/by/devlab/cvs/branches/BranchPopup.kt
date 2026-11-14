@@ -67,6 +67,7 @@ object BranchPopup {
                     isPopup = true
                     // Branch names often hold `_`, which must not become a mnemonic.
                     templatePresentation.setText(entry.text, false)
+                    if (entry.current) templatePresentation.icon = AllIcons.Actions.Checked
                 })
                 is BranchPopupModel.Separator -> group.add(if (entry.text == null) Separator.create() else Separator.create(entry.text))
             }
