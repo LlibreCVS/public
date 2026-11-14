@@ -69,10 +69,13 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
      */
     fun plan(target: SwitchTarget, roots: List<Path>): List<Step> {
         val lists = BranchListService.getInstance(project)
+        val merges = MergeService.getInstance(project)
         return roots.map { root ->
             val name = rootName(root)
             val state = BranchState.read(root)
-            val skip = when (target) {
+            // The merged edits must not travel to another branch (cvs-branch-merge decision 15).
+            val unfinished = merges.unfinished(root)?.let { "unfinished merge of ${it.source}" }
+            val skip = unfinished ?: when (target) {
                 is SwitchTarget.Branch -> when {
                     lists.list(root)?.branches?.contains(target.name) != true -> "lacks the branch ${target.name}"
                     state == BranchState(BranchKind.BRANCH, target.name) && MixedScan.count(root) == 0 -> "already on ${target.name}"

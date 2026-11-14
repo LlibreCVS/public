@@ -6,11 +6,17 @@ import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.util.messages.Topic
+import com.intellij.vcsUtil.VcsUtil
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import com.intellij.util.xmlb.annotations.Attribute
 import com.intellij.util.xmlb.annotations.Tag
 import com.intellij.util.xmlb.annotations.XCollection
+import java.nio.file.Files
 import java.nio.file.Path
 
 /** Told when an unfinished merge was recorded, changed or dropped. */
@@ -60,11 +66,136 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
     /** Every root with an unfinished merge. */
     fun roots(): List<Path> = synchronized(lock) { merges.keys.toList() }
 
-    /** Takes [files], committed from the IDE, out of the unfinished merges (decision 9). */
-    fun committed(files: Collection<Path>): Unit = throw NotImplementedError()
+    /** Whether a merge became fully committed and its merge point still has to be moved. */
+    private val pending = AtomicBoolean()
 
-    /** Takes rolled-back files out of the unfinished merges (decision 9). Call it off the UI thread. */
-    fun refresh(): Unit = throw NotImplementedError()
+    /** The roots whose merge point could not be moved (snapshot moved, CVS error) this session; not retried by itself. */
+    private val stuck: MutableSet<Path> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * Takes [files], committed from the IDE, out of the unfinished merges (decision 9). Cheap, callable on the UI thread:
+     * a merge left with no file has its merge point moved in a background branch operation.
+     */
+    fun committed(files: Collection<Path>) {
+        var changed = false
+        synchronized(lock) {
+            for ((root, merge) in merges.entries.toList()) {
+                val names = files.mapNotNull { relative(root, it) }.filter { it in merge.files }
+                if (names.isEmpty()) continue
+                val left = merge.copy(files = merge.files - names.toSet(), committed = true)
+                merges[root] = left
+                changed = true
+                if (left.files.isEmpty()) pending.set(true)
+            }
+        }
+        if (changed) publish()
+        settleLater()
+    }
+
+    /**
+     * Takes rolled-back files out of the unfinished merges (decision 9): a file the change list does not show as changed
+     * and whose `CVS/Entries` revision is the one after the merge (an added file: gone from `CVS/Entries`). A merge left
+     * with no file is forgotten when nothing of it was committed; otherwise its merge point is moved. With [fresh], the
+     * change list first takes in the disk state (waits for it); call it off the UI thread then.
+     */
+    fun refresh(fresh: Boolean = true) {
+        val current = synchronized(lock) { merges.toMap() }
+        if (current.isEmpty()) return settleLater()
+        val changes: Map<Path, Set<Path>> = if (fresh) {
+            LocalChanges.files(project, current.keys.toList()).mapValues { (_, files) -> files.map(::normalized).toSet() }
+        } else {
+            val manager = ChangeListManager.getInstance(project)
+            current.keys.associateWith { root ->
+                manager.getChangesIn(VcsUtil.getFilePath(root.toFile(), true))
+                    .mapNotNull { (it.afterRevision ?: it.beforeRevision)?.file?.ioFile?.toPath()?.let(::normalized) }.toSet()
+            }
+        }
+        var changed = false
+        synchronized(lock) {
+            for (root in current.keys) {
+                val merge = merges[root] ?: continue
+                val rolledBack = merge.files.filter { (path, revision) ->
+                    val file = normalized(root.resolve(path))
+                    file !in changes[root].orEmpty() && rolledBack(file, revision)
+                }.keys
+                val left = merge.copy(files = merge.files - rolledBack)
+                when {
+                    left.files.isNotEmpty() -> merges[root] = left
+                    // Fully committed (or committed and the rest rolled back): the merge point moves.
+                    left.committed -> {
+                        merges[root] = left
+                        pending.set(true)
+                    }
+                    // Every file rolled back: forgotten without moving anything.
+                    else -> merges.remove(root)
+                }
+                if (rolledBack.isNotEmpty() || left.files.isEmpty() && !left.committed) changed = true
+            }
+        }
+        if (changed) publish()
+        settleLater()
+    }
+
+    /** Moves the merge points of the fully committed merges in a background branch operation, or later when one runs. */
+    private fun settleLater() {
+        if (!pending.get() || project.isDisposed) return
+        BranchOperations.getInstance(project).queueIfIdle("Moving CVS merge points") {
+            pending.set(false)
+            val done = synchronized(lock) { merges.filter { (root, it) -> it.files.isEmpty() && it.committed && root !in stuck }.keys.toList() }
+            for (root in done) moveMergePoint(root)?.let { CvsRunner.notify(project, it) }
+        }
+    }
+
+    /**
+     * Moves [root]'s `<SRC>_MERGED_<DST>` to the snapshot and drops its unfinished merge (decisions 3, 14), on the calling
+     * thread (never the UI thread); returns the report, or null without an unfinished merge. When the snapshot no longer
+     * marks the recorded revisions (another merge moved it) or CVS fails, nothing is moved and the merge stays.
+     */
+    internal fun moveMergePoint(root: Path): BranchReport? {
+        val merge = unfinished(root) ?: return null
+        val name = BranchSwitcher.rootName(root)
+        val title = "Merge of ${merge.source} into ${merge.target}"
+        val error = try {
+            val now = CvsTags.revisions(project, root, setOf(merge.mergingTag))[merge.mergingTag].orEmpty()
+            if (now != merge.snapshot) {
+                "snapshot ${merge.mergingTag} was moved by another merge; ${merge.mergedTag} was not moved (use Forget Merge, then merge again)"
+            } else {
+                CvsTags.move(project, root, merge.mergingTag, merge.mergedTag)
+            }
+        } catch (e: Exception) {
+            if (e is ControlFlowException) throw e
+            e.message ?: e.toString()
+        }
+        if (error != null) {
+            stuck.add(key(root))
+            return BranchReport(title, emptyList(), emptyList(), emptyList(), listOf(name to error))
+        }
+        stuck.remove(key(root))
+        drop(root)
+        return BranchReport(title, listOf(name), emptyList(), emptyList(), emptyList(), switchedLabel = "Merge point ${merge.mergedTag} moved")
+    }
+
+    /**
+     * Whether [file], recorded at [revision] after the merge, is back at it (an added file: no longer listed). A missing
+     * file is not rolled back: the change list shows it as locally deleted, not as a change, and its entry is unchanged.
+     */
+    private fun rolledBack(file: Path, revision: String): Boolean {
+        val now = entryRevision(file)
+        return when {
+            revision.startsWith("0") -> now == null
+            !Files.exists(file) -> false
+            revision.startsWith("-") -> now == revision.removePrefix("-")
+            else -> now == revision
+        }
+    }
+
+    /** [file] below [root], `/`-separated, or null. */
+    private fun relative(root: Path, file: Path): String? {
+        val path = normalized(file)
+        return if (path.startsWith(root)) root.relativize(path).toString().replace('\\', '/') else null
+    }
+
+    private fun normalized(path: Path): Path = path.toAbsolutePath().normalize()
 
     /** Drops [root]'s unfinished merge. */
     fun drop(root: Path) {

@@ -10,5 +10,12 @@ import com.intellij.openapi.vcs.checkin.VcsCheckinHandlerFactory
 class MergeCheckinHandlerFactory : VcsCheckinHandlerFactory(CvsVcs2.getKey()) {
 
     override fun createVcsHandler(panel: CheckinProjectPanel, commitContext: CommitContext): CheckinHandler =
-        object : CheckinHandler() {}
+        object : CheckinHandler() {
+            override fun checkinSuccessful() {
+                val files = panel.selectedChanges.flatMap { change ->
+                    listOfNotNull(change.afterRevision, change.beforeRevision).map { it.file.ioFile.toPath() }
+                }.distinct()
+                MergeService.getInstance(panel.project).committed(files)
+            }
+        }
 }

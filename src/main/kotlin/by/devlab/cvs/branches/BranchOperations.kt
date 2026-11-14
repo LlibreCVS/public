@@ -34,12 +34,16 @@ class BranchOperations(private val project: Project) {
      * task ends, also on a failure or cancel. While another one runs, nothing runs and a notification says so.
      */
     fun queue(title: String, operation: () -> Unit) {
-        if (!tryStart()) {
+        if (!queueIfIdle(title, operation)) {
             NotificationGroupManager.getInstance().getNotificationGroup("IntelliJCVS")
                 .createNotification(title, "A CVS branch operation is already running; nothing was changed.", NotificationType.WARNING)
                 .notify(project)
-            return
         }
+    }
+
+    /** Like [queue], but without a notification: false, and nothing run, while another operation runs. */
+    fun queueIfIdle(title: String, operation: () -> Unit): Boolean {
+        if (!tryStart()) return false
         try {
             object : Task.Backgroundable(project, title, false) {
                 override fun run(indicator: ProgressIndicator) = operation()
@@ -50,6 +54,7 @@ class BranchOperations(private val project: Project) {
             finish()
             throw e
         }
+        return true
     }
 
     companion object {
