@@ -177,6 +177,38 @@ class MergeTrackingTest {
     }
 
     @Test
+    @DisplayName("Complete Merge moves the merge point")
+    fun completeMergeMovesTheMergePoint() {
+        val (a, _) = roots("complete", listOf("BR_FIX"))
+        mergeBoth(a)
+
+        val (report, notification) = BranchFixtures.notified(project.get()) { service().complete(a) }
+
+        println("${notification.title}\n${notification.content}")
+        for (file in listOf(ONE, TWO)) {
+            assertEquals(tag(a, file, "BR_FIX_MERGING_TRUNK"), tag(a, file, "BR_FIX_MERGED_TRUNK"), "MERGED of $file")
+        }
+        assertNull(service().unfinished(a))
+        assertEquals(listOf(module(a)), report!!.switched)
+    }
+
+    @Test
+    @DisplayName("Forget Merge keeps the merge point")
+    fun forgetMergeKeepsTheMergePoint() {
+        val (a, _) = roots("forget", listOf("BR_FIX"))
+        mergeBoth(a)
+
+        val (report, notification) = BranchFixtures.notified(project.get()) { service().forget(a) }
+
+        println("${notification.title}\n${notification.content}")
+        assertNull(tag(a, ONE, "BR_FIX_MERGED_TRUNK"))
+        assertNull(tag(a, TWO, "BR_FIX_MERGED_TRUNK"))
+        assertNull(service().unfinished(a))
+        assertEquals(listOf(module(a)), report!!.switched)
+        assertEquals("one\nfix\n", text(a, ONE), "Forget Merge leaves the files as they are")
+    }
+
+    @Test
     @DisplayName("Switch skips a root with an unfinished merge")
     fun switchSkipsARootWithAnUnfinishedMerge() {
         val (a, b) = roots("switch", listOf("BR_FIX", "BR_RELEASE"))

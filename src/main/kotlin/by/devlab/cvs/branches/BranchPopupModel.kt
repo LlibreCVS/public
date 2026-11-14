@@ -20,6 +20,12 @@ sealed interface BranchChoice {
 
     /** Merge [source], a branch or the trunk, into what each of [roots] is on now (cvs-branch-merge decision 10). */
     data class Merge(val source: SwitchTarget, val roots: List<Path>) : BranchChoice
+
+    /** Move the merge point of [root]'s unfinished merge now (cvs-branch-merge decision 8). */
+    data class CompleteMerge(val root: Path) : BranchChoice
+
+    /** Forget [root]'s unfinished merge without moving its merge point (cvs-branch-merge decision 8). */
+    data class ForgetMerge(val root: Path) : BranchChoice
 }
 
 /**

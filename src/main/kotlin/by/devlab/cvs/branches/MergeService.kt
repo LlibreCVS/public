@@ -197,6 +197,12 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
 
     private fun normalized(path: Path): Path = path.toAbsolutePath().normalize()
 
+    /** Complete Merge: moves [root]'s merge point now and reports it (decision 8). */
+    fun complete(root: Path): BranchReport? = throw NotImplementedError()
+
+    /** Forget Merge: forgets [root]'s unfinished merge without moving its merge point and reports it (decision 8). */
+    fun forget(root: Path): BranchReport? = throw NotImplementedError()
+
     /** Drops [root]'s unfinished merge. */
     fun drop(root: Path) {
         val removed = synchronized(lock) { merges.remove(key(root)) }

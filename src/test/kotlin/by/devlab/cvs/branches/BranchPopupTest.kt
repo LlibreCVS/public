@@ -248,6 +248,42 @@ class BranchPopupTest {
     }
 
     @Test
+    @DisplayName("Unfinished merge is shown")
+    fun unfinishedMergeIsShown() {
+        val a = workingCopy(temp.get(), "module-a")
+        val b = workingCopy(temp.get(), "module-b")
+        mapToCvs(project.get(), a, b)
+        refreshed(project.get())
+        lists(a to listOf("BR_FIX"), b to listOf("BR_FIX"))
+        MergeService.getInstance(project.get()).record(
+            a, MergeService.UnfinishedMerge("BR_FIX", "TRUNK", mapOf("one.txt" to "1.1", "dir/two.txt" to "1.1"), emptyMap()),
+        )
+
+        val model = BranchPopupModel.build(project.get(), opening = true)
+        println(model.render())
+
+        val rootA = roots(model.entries).single { it.text.startsWith("module-a") }
+        val entry = item(rootA.entries, "merging BR_FIX: 2 files left")
+        assertFalse(entry.enabled)
+        assertEquals(BranchChoice.CompleteMerge(a), item(rootA.entries, "Complete Merge").choice)
+        assertEquals(BranchChoice.ForgetMerge(a), item(rootA.entries, "Forget Merge").choice)
+        val rootB = roots(model.entries).single { it.text.startsWith("module-b") }
+        assertFalse(rootB.entries.filterIsInstance<Item>().any { it.text.startsWith("merging") || it.text == "Complete Merge" }, model.render())
+
+        // With the flag held, Complete and Forget are disabled too.
+        val operations = BranchOperations.getInstance(project.get())
+        assertTrue(operations.tryStart())
+        try {
+            val busy = BranchPopupModel.build(project.get(), opening = true)
+            val busyA = roots(busy.entries).single { it.text.startsWith("module-a") }
+            assertFalse(item(busyA.entries, "Complete Merge").enabled)
+            assertFalse(item(busyA.entries, "Forget Merge").enabled)
+        } finally {
+            operations.finish()
+        }
+    }
+
+    @Test
     @DisplayName("Load error shown by its first line")
     fun loadErrorShownByItsFirstLine() {
         val a = workingCopy(temp.get(), "module-a")
