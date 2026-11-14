@@ -8,7 +8,13 @@
     <statusBarWidgetFactory id="IntelliJCVS.BranchWidget"
                             implementation="by.devlab.cvs.branches.BranchStatusBarWidgetFactory"/>
     <vcs.branchStateProvider implementation="by.devlab.cvs.branches.CvsBranchStateProvider"/>
+    <vcsCheckinHandlerFactory implementation="by.devlab.cvs.branches.MergeCheckinHandlerFactory"/>
   </extensions>
+
+  <projectListeners>
+    <listener class="by.devlab.cvs.branches.MergeChangeListListener"
+              topic="com.intellij.openapi.vcs.changes.ChangeListListener"/>
+  </projectListeners>
 
   <actions>
     <action id="IntelliJCVS.PutOnTag" class="by.devlab.cvs.tagging.PutOnTagAction" text="Put on Tag..."

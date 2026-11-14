@@ -26,6 +26,12 @@ interface BranchPrompts {
     fun confirmSwitch(project: Project, target: String, changes: Map<String, Int>): Boolean
 
     /**
+     * Whether to merge [source] although the roots in [changes] (root name → number of changed files) have uncommitted
+     * changes, which the merge mixes with its own; the roots are also updated (cvs-branch-merge decisions 6, 13).
+     */
+    fun confirmMerge(project: Project, source: String, changes: Map<String, Int>): Boolean
+
+    /**
      * What to do with a switch to [branch], which covers only part of the roots in [coverage] (root name → its files
      * with the branch and all its files): the other files would leave the working copy (design decision 20).
      */
@@ -95,6 +101,19 @@ private object DialogPrompts : BranchPrompts {
             "These roots have uncommitted changes:\n$roots\n\nCVS carries them over to $target and may merge them with conflicts.",
             "Switch to $target",
             "Switch",
+            Messages.getCancelButton(),
+            Messages.getWarningIcon(),
+        ) == Messages.OK
+    }
+
+    override fun confirmMerge(project: Project, source: String, changes: Map<String, Int>): Boolean = onUiThread {
+        val roots = changes.entries.joinToString("\n") { (root, count) -> "$root: $count changed ${if (count == 1) "file" else "files"}" }
+        Messages.showOkCancelDialog(
+            project,
+            "These roots have uncommitted changes:\n$roots\n\nThe merge of $source mixes its changes with them, and the " +
+                "roots are also updated to their latest revisions. Nothing is committed.",
+            "Merge $source into Current",
+            "Merge",
             Messages.getCancelButton(),
             Messages.getWarningIcon(),
         ) == Messages.OK

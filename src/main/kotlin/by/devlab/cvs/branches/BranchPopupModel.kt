@@ -17,6 +17,15 @@ sealed interface BranchChoice {
 
     /** Load the branch lists of [roots] again. */
     data class Refresh(val roots: List<Path>) : BranchChoice
+
+    /** Merge [source], a branch or the trunk, into what each of [roots] is on now (cvs-branch-merge decision 10). */
+    data class Merge(val source: SwitchTarget, val roots: List<Path>) : BranchChoice
+
+    /** Move the merge point of [root]'s unfinished merge now (cvs-branch-merge decision 8). */
+    data class CompleteMerge(val root: Path) : BranchChoice
+
+    /** Forget [root]'s unfinished merge without moving its merge point (cvs-branch-merge decision 8). */
+    data class ForgetMerge(val root: Path) : BranchChoice
 }
 
 /**
@@ -31,8 +40,8 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
     /** An entry; choosing it does [choice], or nothing when [choice] is null. [current] marks the current branch. */
     data class Item(val text: String, val choice: BranchChoice?, val current: Boolean = false, val enabled: Boolean = true) : Entry
 
-    /** A root's submenu. */
-    data class Submenu(val text: String, val entries: List<Entry>) : Entry
+    /** A root's or a branch's submenu; [current] marks the current branch. */
+    data class Submenu(val text: String, val entries: List<Entry>, val current: Boolean = false) : Entry
 
     /** A separator, with an optional title. */
     data class Separator(val text: String? = null) : Entry
@@ -50,7 +59,9 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
                     append('\n')
                 }
                 is Submenu -> {
-                    append(indent).append(entry.text).append(" >\n")
+                    append(indent).append(entry.text)
+                    if (entry.current) append(" [current]")
+                    append(" >\n")
                     render(entry.entries, "$indent  ")
                 }
                 is Separator -> append(indent).append("---").append(entry.text?.let { " $it" }.orEmpty()).append('\n')
@@ -61,6 +72,11 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
     companion object {
         const val NEW_BRANCH = "New Branch…"
         const val BACK_TO_TRUNK = "Back to Trunk"
+        const val MERGE_TRUNK = "Merge Trunk into Current"
+        const val SWITCH = "Switch"
+        const val MERGE_INTO_CURRENT = "Merge into Current"
+        const val COMPLETE_MERGE = "Complete Merge"
+        const val FORGET_MERGE = "Forget Merge"
         const val LOADING = "Loading branches…"
         const val REFRESH = "Refresh Branch List"
 
@@ -80,11 +96,15 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
             val lists = roots.associate { it.path to service.list(it.path) }
             // While a branch operation runs, only Refresh Branch List can be chosen (design decision 21).
             val busy = BranchOperations.getInstance(project).isRunning
+            // The unfinished merges are re-checked for rolled-back files once the change list is current (cvs-branch-merge
+            // decision 9), in the background: building the popup only reads them.
+            val merges = MergeService.getInstance(project).apply { refreshLater() }
 
             val entries = ArrayList<Entry>()
             if (busy) entries += Item(BranchOperations.IN_PROGRESS, null, enabled = false)
             if (roots.size == 1) {
                 val root = roots.single()
+                entries += mergeEntries(merges, root.path, busy)
                 entries += rootEntries(roots, lists[root.path]?.branches.orEmpty(), busy)
                 entries += statusEntries(service, root.path, root.path in loading, lists[root.path] != null)
             } else {
@@ -99,7 +119,8 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
                 entries += Separator("Roots")
                 for (root in roots) {
                     val list = lists[root.path]?.branches.orEmpty()
-                    entries += Submenu("${root.name}: ${root.status.text}", rootEntries(listOf(root), list, busy) +
+                    entries += Submenu("${root.name}: ${root.status.text}", mergeEntries(merges, root.path, busy) +
+                        rootEntries(listOf(root), list, busy) +
                         statusEntries(service, root.path, root.path in loading, lists[root.path] != null))
                 }
             }
@@ -111,9 +132,10 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
         }
 
         /**
-         * New Branch…, Back to Trunk and [branches] acting on [roots]. A branch every root is on, with no file on another
-         * branch, is current and chooses nothing (design decisions 6, 19). When [busy], every entry is disabled
-         * (design decision 21).
+         * New Branch…, Back to Trunk, Merge Trunk into Current and [branches] acting on [roots], each branch a submenu
+         * with Switch and Merge into Current (cvs-branch-merge decision 10). A branch every root is on, with no file on
+         * another branch, is current: its Switch chooses nothing and it offers no merge (design decisions 6, 19). When
+         * [busy], every entry is disabled (design decision 21).
          */
         private fun rootEntries(roots: List<BranchStateService.Root>, branches: List<String>, busy: Boolean): List<Entry> {
             val paths = roots.map { it.path }
@@ -121,13 +143,36 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
                 Item(NEW_BRANCH, BranchChoice.NewBranch(paths), enabled = !busy),
                 Item(BACK_TO_TRUNK, BranchChoice.Trunk(paths), enabled = !busy),
             )
+            // Merging the trunk into roots that are all on it brings nothing (cvs-branch-merge decision 10).
+            if (!roots.all { it.status.state == BranchState.TRUNK }) {
+                entries += Item(MERGE_TRUNK, BranchChoice.Merge(SwitchTarget.Trunk, paths), enabled = !busy)
+            }
             if (branches.isNotEmpty()) entries += Separator("Branches")
             for (branch in branches) {
                 val target = BranchState(BranchKind.BRANCH, branch)
                 val current = roots.all { it.status.state == target && it.status.mixedFiles == 0 }
-                entries += Item(branch, if (current) null else BranchChoice.Switch(branch, paths), current = current, enabled = !busy)
+                // Each branch is a submenu (decision 10); the current one switches nothing and offers no merge.
+                val actions = mutableListOf<Entry>(Item(SWITCH, if (current) null else BranchChoice.Switch(branch, paths), enabled = !busy))
+                if (!current) actions += Item(MERGE_INTO_CURRENT, BranchChoice.Merge(SwitchTarget.Branch(branch), paths), enabled = !busy)
+                entries += Submenu(branch, actions, current = current)
             }
             return entries
+        }
+
+        /**
+         * [root]'s unfinished merge (cvs-branch-merge decision 8): `merging <SRC>: N files left`, Complete Merge and
+         * Forget Merge, then a separator; nothing without one. When [busy], the actions are disabled.
+         */
+        private fun mergeEntries(merges: MergeService, root: Path, busy: Boolean): List<Entry> {
+            val merge = merges.unfinished(root) ?: return emptyList()
+            val source = if (merge.source == MergeService.TRUNK) "the trunk" else merge.source
+            val left = merge.files.size
+            return listOf(
+                Item("merging $source: $left ${if (left == 1) "file" else "files"} left", null, enabled = false),
+                Item(COMPLETE_MERGE, BranchChoice.CompleteMerge(root), enabled = !busy),
+                Item(FORGET_MERGE, BranchChoice.ForgetMerge(root), enabled = !busy),
+                Separator(),
+            )
         }
 
         /**

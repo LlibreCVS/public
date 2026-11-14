@@ -91,6 +91,14 @@ class BranchCreator(private val project: Project, private val prompts: BranchPro
                 // A recreated branch is on every file of the root now: its old counts no longer hold (decision 24).
                 if (root in existing) lists.forget(root, branch)
             }
+            // The merged edits of an unfinished merge must not travel to the new branch (cvs-branch-merge decision 15).
+            val unfinished = if (request.switch) MergeService.getInstance(project).unfinished(root) else null
+            if (unfinished != null) {
+                CvsRunner.refresh(project, root)
+                skipped += name to "unfinished merge of ${unfinished.source}; " +
+                    if (use) "not switched" else "the branch was created, not switched"
+                continue
+            }
             if (request.switch) {
                 // The tag and the switch run as two handlers, so that a branch made before a failed switch still enters
                 // the list and the report says which step failed (design.md, Risks).

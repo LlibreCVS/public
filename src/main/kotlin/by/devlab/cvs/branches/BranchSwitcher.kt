@@ -9,18 +9,12 @@ import com.intellij.cvsSupport2.updateinfo.UpdatedFilesProcessor
 import com.intellij.cvsSupport2.cvsoperations.dateOrRevision.RevisionOrDate
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.diagnostic.ControlFlowException
-import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vcs.update.FileGroup
 import com.intellij.openapi.vcs.update.UpdatedFiles
 import com.intellij.vcsUtil.VcsUtil
 import org.netbeans.lib.cvsclient.command.KeywordSubstitution
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-
-private val LOG = logger<BranchSwitcher>()
 
 /** Where a switch takes the roots: a branch or the trunk. */
 sealed interface SwitchTarget {
@@ -75,10 +69,13 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
      */
     fun plan(target: SwitchTarget, roots: List<Path>): List<Step> {
         val lists = BranchListService.getInstance(project)
+        val merges = MergeService.getInstance(project)
         return roots.map { root ->
             val name = rootName(root)
             val state = BranchState.read(root)
-            val skip = when (target) {
+            // The merged edits must not travel to another branch (cvs-branch-merge decision 15).
+            val unfinished = merges.unfinished(root)?.let { "unfinished merge of ${it.source}" }
+            val skip = unfinished ?: when (target) {
                 is SwitchTarget.Branch -> when {
                     lists.list(root)?.branches?.contains(target.name) != true -> "lacks the branch ${target.name}"
                     state == BranchState(BranchKind.BRANCH, target.name) && MixedScan.count(root) == 0 -> "already on ${target.name}"
@@ -187,17 +184,10 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
      * IDE's change list after it took in the current disk state; no server is contacted (design decision 8).
      */
     internal fun uncommittedChanges(steps: List<Step>): Map<String, Int> {
-        if (steps.isEmpty()) return emptyMap()
-        val manager = ChangeListManager.getInstance(project)
-        steps.forEach { CvsRunner.refresh(project, it.root) }
-        val updated = CountDownLatch(1)
-        manager.invokeAfterUpdate(false) { updated.countDown() }
-        if (!updated.await(2, TimeUnit.MINUTES)) LOG.warn("The change list did not update in time; counting what it has")
+        val files = LocalChanges.files(project, steps.map { it.root })
         val counts = LinkedHashMap<String, Int>()
         for (step in steps) {
-            val count = manager.getChangesIn(VcsUtil.getFilePath(step.root.toFile(), true))
-                .mapNotNull { (it.afterRevision ?: it.beforeRevision)?.file?.path }
-                .distinct().size
+            val count = files[step.root].orEmpty().size
             if (count > 0) counts[step.name] = count
         }
         return counts
