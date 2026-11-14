@@ -27,7 +27,8 @@ import java.nio.file.Path
 /**
  * Capability cvs-branch-popup, requirements "Branch popup lists actions, common branches and roots", "Current branch
  * is marked and entries can be searched", "Branch lists are remembered" and "Branch lists are loaded in the
- * background" (design decisions 5, 6, 15, 16, 19): the popup's model, read as a plain structure.
+ * background" (design decisions 5, 6, 15, 16, 19; cvs-branch-merge decision 10: branch submenus with Switch and
+ * Merge into Current, Merge Trunk into Current): the popup's model, read as a plain structure.
  */
 @TestApplication
 class BranchPopupTest {
@@ -39,6 +40,9 @@ class BranchPopupTest {
 
         const val NEW_BRANCH = "New Branch…"
         const val BACK_TO_TRUNK = "Back to Trunk"
+        const val MERGE_TRUNK = "Merge Trunk into Current"
+        const val SWITCH = "Switch"
+        const val MERGE_INTO_CURRENT = "Merge into Current"
     }
 
     private val temp = tempPathFixture()
@@ -47,8 +51,9 @@ class BranchPopupTest {
     @Test
     @DisplayName("Popup with several roots")
     fun popupWithSeveralRoots() {
-        val a = workingCopy(temp.get(), "module-a")
-        val b = workingCopy(temp.get(), "module-b")
+        // On a branch outside the lists, so that Merge Trunk into Current is offered.
+        val a = workingCopy(temp.get(), "module-a", "TBR_OTHER")
+        val b = workingCopy(temp.get(), "module-b", "TBR_OTHER")
         mapToCvs(project.get(), a, b)
         refreshed(project.get())
         lists(a to listOf("BR_RELEASE", "BR_FIX"), b to listOf("BR_RELEASE"))
@@ -56,16 +61,21 @@ class BranchPopupTest {
         val model = BranchPopupModel.build(project.get(), opening = true)
         println(model.render())
 
-        assertEquals(listOf(NEW_BRANCH, BACK_TO_TRUNK, "BR_RELEASE"), items(model.entries).dropLast(1).map { it.text })
-        assertEquals(BranchChoice.Switch("BR_RELEASE", listOf(a, b)), item(model.entries, "BR_RELEASE").choice)
+        assertEquals(listOf(NEW_BRANCH, BACK_TO_TRUNK, MERGE_TRUNK), items(model.entries).dropLast(1).map { it.text })
+        assertEquals(listOf("BR_RELEASE"), branches(model.entries).map { it.text })
+        assertEquals(BranchChoice.Switch("BR_RELEASE", listOf(a, b)), switchOf(model.entries, "BR_RELEASE").choice)
         assertEquals(BranchChoice.Trunk(listOf(a, b)), item(model.entries, BACK_TO_TRUNK).choice)
         assertEquals(BranchChoice.NewBranch(listOf(a, b)), item(model.entries, NEW_BRANCH).choice)
-        val submenus = model.entries.filterIsInstance<Submenu>()
-        assertEquals(listOf("module-a: trunk", "module-b: trunk"), submenus.map { it.text })
-        assertEquals(listOf(NEW_BRANCH, BACK_TO_TRUNK, "BR_FIX", "BR_RELEASE"), items(submenus[0].entries).map { it.text })
-        assertEquals(listOf(NEW_BRANCH, BACK_TO_TRUNK, "BR_RELEASE"), items(submenus[1].entries).map { it.text })
-        assertEquals(BranchChoice.Switch("BR_FIX", listOf(a)), item(submenus[0].entries, "BR_FIX").choice)
+        assertEquals(BranchChoice.Merge(SwitchTarget.Trunk, listOf(a, b)), item(model.entries, MERGE_TRUNK).choice)
+        val submenus = roots(model.entries)
+        assertEquals(listOf("module-a: BR_OTHER", "module-b: BR_OTHER"), submenus.map { it.text })
+        assertEquals(listOf(NEW_BRANCH, BACK_TO_TRUNK, MERGE_TRUNK), items(submenus[0].entries).map { it.text })
+        assertEquals(listOf("BR_FIX", "BR_RELEASE"), branches(submenus[0].entries).map { it.text })
+        assertEquals(listOf("BR_RELEASE"), branches(submenus[1].entries).map { it.text })
+        assertEquals(BranchChoice.Switch("BR_FIX", listOf(a)), switchOf(submenus[0].entries, "BR_FIX").choice)
+        assertEquals(BranchChoice.Merge(SwitchTarget.Branch("BR_FIX"), listOf(a)), mergeOf(submenus[0].entries, "BR_FIX").choice)
         assertEquals(BranchChoice.Trunk(listOf(b)), item(submenus[1].entries, BACK_TO_TRUNK).choice)
+        assertEquals(BranchChoice.Merge(SwitchTarget.Trunk, listOf(b)), item(submenus[1].entries, MERGE_TRUNK).choice)
         assertEquals(BranchChoice.NewBranch(listOf(a)), item(submenus[0].entries, NEW_BRANCH).choice)
         assertTrue(items(model.entries).last().text.startsWith("Refresh Branch List (updated "), model.render())
     }
@@ -73,7 +83,7 @@ class BranchPopupTest {
     @Test
     @DisplayName("Popup with one root")
     fun popupWithOneRoot() {
-        val a = workingCopy(temp.get(), "module-a")
+        val a = workingCopy(temp.get(), "module-a", "TBR_OTHER")
         mapToCvs(project.get(), a)
         refreshed(project.get())
         lists(a to listOf("BR_RELEASE", "BR_FIX"))
@@ -81,9 +91,45 @@ class BranchPopupTest {
         val model = BranchPopupModel.build(project.get(), opening = true)
         println(model.render())
 
-        assertTrue(model.entries.none { it is Submenu }, model.render())
-        assertEquals(listOf(NEW_BRANCH, BACK_TO_TRUNK, "BR_FIX", "BR_RELEASE"), items(model.entries).dropLast(1).map { it.text })
-        assertEquals(BranchChoice.Switch("BR_FIX", listOf(a)), item(model.entries, "BR_FIX").choice)
+        assertTrue(roots(model.entries).isEmpty(), model.render())
+        assertEquals(listOf(NEW_BRANCH, BACK_TO_TRUNK, MERGE_TRUNK), items(model.entries).dropLast(1).map { it.text })
+        assertEquals(listOf("BR_FIX", "BR_RELEASE"), branches(model.entries).map { it.text })
+        assertEquals(BranchChoice.Switch("BR_FIX", listOf(a)), switchOf(model.entries, "BR_FIX").choice)
+        assertEquals(BranchChoice.Merge(SwitchTarget.Trunk, listOf(a)), item(model.entries, MERGE_TRUNK).choice)
+    }
+
+    @Test
+    @DisplayName("Branch submenu")
+    fun branchSubmenu() {
+        val a = workingCopy(temp.get(), "module-a")
+        val b = workingCopy(temp.get(), "module-b")
+        mapToCvs(project.get(), a, b)
+        refreshed(project.get())
+        lists(a to listOf("BR_RELEASE"), b to listOf("BR_RELEASE"))
+
+        val model = BranchPopupModel.build(project.get(), opening = true)
+        println(model.render())
+
+        val branch = branches(model.entries).single { it.text == "BR_RELEASE" }
+        assertEquals(listOf(SWITCH, MERGE_INTO_CURRENT), items(branch.entries).map { it.text })
+        assertEquals(BranchChoice.Switch("BR_RELEASE", listOf(a, b)), switchOf(model.entries, "BR_RELEASE").choice)
+        assertEquals(BranchChoice.Merge(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b)), mergeOf(model.entries, "BR_RELEASE").choice)
+    }
+
+    @Test
+    @DisplayName("No trunk merge on the trunk")
+    fun noTrunkMergeOnTheTrunk() {
+        val a = workingCopy(temp.get(), "module-a")
+        val b = workingCopy(temp.get(), "module-b")
+        mapToCvs(project.get(), a, b)
+        refreshed(project.get())
+        lists(a to listOf("BR_RELEASE"), b to listOf("BR_RELEASE"))
+
+        val model = BranchPopupModel.build(project.get(), opening = true)
+        println(model.render())
+
+        assertFalse(model.render().contains(MERGE_TRUNK), model.render())
+        assertTrue(model.render().contains(MERGE_INTO_CURRENT), model.render())
     }
 
     @Test
@@ -97,11 +143,12 @@ class BranchPopupTest {
 
         val marked = BranchPopupModel.build(project.get(), opening = true)
         println(marked.render())
-        val current = item(marked.entries, "BR_RELEASE")
+        val current = branches(marked.entries).single { it.text == "BR_RELEASE" }
         assertTrue(current.current, marked.render())
-        assertNull(current.choice, "choosing the current branch must switch nothing")
-        assertEquals(listOf("module-a: BR_RELEASE", "module-b: BR_RELEASE"), marked.entries.filterIsInstance<Submenu>().map { it.text })
-        assertFalse(item(marked.entries.filterIsInstance<Submenu>()[0].entries, "BR_FIX").current)
+        assertNull(switchOf(marked.entries, "BR_RELEASE").choice, "Switch of the current branch must switch nothing")
+        assertEquals(listOf(SWITCH), items(current.entries).map { it.text }, "the current branch offers no Merge into Current")
+        assertEquals(listOf("module-a: BR_RELEASE", "module-b: BR_RELEASE"), roots(marked.entries).map { it.text })
+        assertFalse(branches(roots(marked.entries)[0].entries).single { it.text == "BR_FIX" }.current)
 
         // A file of module-a on another branch: the root is mixed, so the branch is not current (decision 19).
         FakeWorkingCopy.fileEntry(a, "stray.txt", "TOTHER")
@@ -109,9 +156,9 @@ class BranchPopupTest {
 
         val mixed = BranchPopupModel.build(project.get(), opening = true)
         println(mixed.render())
-        assertFalse(item(mixed.entries, "BR_RELEASE").current, mixed.render())
-        assertEquals(BranchChoice.Switch("BR_RELEASE", listOf(a, b)), item(mixed.entries, "BR_RELEASE").choice)
-        assertEquals("module-a: BR_RELEASE *", mixed.entries.filterIsInstance<Submenu>()[0].text)
+        assertFalse(branches(mixed.entries).single { it.text == "BR_RELEASE" }.current, mixed.render())
+        assertEquals(BranchChoice.Switch("BR_RELEASE", listOf(a, b)), switchOf(mixed.entries, "BR_RELEASE").choice)
+        assertEquals("module-a: BR_RELEASE *", roots(mixed.entries)[0].text)
     }
 
     // Review focus: opening the popup never contacts the server once lists are remembered.
@@ -130,7 +177,7 @@ class BranchPopupTest {
             println(model.render())
 
             assertEquals(emptyList<Path>(), model.loading)
-            assertTrue("BR_RELEASE" in items(model.entries).map { it.text }, model.render())
+            assertTrue("BR_RELEASE" in branches(model.entries).map { it.text }, model.render())
             assertFalse(model.render().contains("Loading"), model.render())
             BranchListService.getInstance(project.get()).awaitLoad()
             server.soTimeout = 500
@@ -155,13 +202,13 @@ class BranchPopupTest {
         println(loading.render())
         assertEquals(listOf(a), loading.loading)
         assertTrue(items(loading.entries).any { it.text == "Loading branches…" && !it.enabled }, loading.render())
-        assertFalse(items(loading.entries).any { it.text == "BR_RELEASE" }, loading.render())
+        assertFalse(branches(loading.entries).any { it.text == "BR_RELEASE" }, loading.render())
 
         service.awaitLoad()
         val loaded = BranchPopupModel.build(project.get(), opening = false)
         println(loaded.render())
         assertEquals(emptyList<Path>(), loaded.loading)
-        assertEquals(BranchChoice.Switch("BR_RELEASE", listOf(a)), item(loaded.entries, "BR_RELEASE").choice)
+        assertEquals(BranchChoice.Switch("BR_RELEASE", listOf(a)), switchOf(loaded.entries, "BR_RELEASE").choice)
         assertFalse(loaded.render().contains("Loading"), loaded.render())
     }
 
@@ -182,20 +229,22 @@ class BranchPopupTest {
             val first = items(model.entries).first()
             assertEquals(BranchOperations.IN_PROGRESS, first.text)
             assertFalse(first.enabled)
-            val actions = items(model.entries) + model.entries.filterIsInstance<Submenu>().flatMap { items(it.entries) }
+            val actions = allItems(model.entries)
             val refresh = actions.filter { it.choice is BranchChoice.Refresh }
             assertEquals(1, refresh.size, model.render())
             assertTrue(refresh.single().enabled, "Refresh Branch List stays enabled")
             for (entry in actions.filter { it.choice != null && it.choice !is BranchChoice.Refresh }) {
                 assertFalse(entry.enabled, "${entry.text} must be disabled during an operation")
             }
-            assertTrue(actions.any { it.text == "BR_FIX" } && actions.count { it.text == NEW_BRANCH } == 3, model.render())
+            assertTrue(actions.count { it.text == NEW_BRANCH } == 3, model.render())
+            assertTrue(actions.count { it.text == MERGE_INTO_CURRENT } >= 3, "merge entries are listed (disabled): ${model.render()}")
         } finally {
             operations.finish()
         }
         val after = BranchPopupModel.build(project.get(), opening = true)
         assertFalse(after.render().contains(BranchOperations.IN_PROGRESS), after.render())
-        assertTrue(item(after.entries, "BR_RELEASE").enabled)
+        assertTrue(switchOf(after.entries, "BR_RELEASE").enabled)
+        assertTrue(mergeOf(after.entries, "BR_RELEASE").enabled)
     }
 
     @Test
@@ -223,4 +272,22 @@ class BranchPopupTest {
 
     private fun item(entries: List<BranchPopupModel.Entry>, text: String): Item =
         items(entries).single { it.text == text }
+
+    /** The root submenus: named `<root>: <state>`. */
+    private fun roots(entries: List<BranchPopupModel.Entry>): List<Submenu> =
+        entries.filterIsInstance<Submenu>().filter { ": " in it.text }
+
+    /** The branch submenus. */
+    private fun branches(entries: List<BranchPopupModel.Entry>): List<Submenu> =
+        entries.filterIsInstance<Submenu>().filter { ": " !in it.text }
+
+    private fun switchOf(entries: List<BranchPopupModel.Entry>, branch: String): Item =
+        item(branches(entries).single { it.text == branch }.entries, SWITCH)
+
+    private fun mergeOf(entries: List<BranchPopupModel.Entry>, branch: String): Item =
+        item(branches(entries).single { it.text == branch }.entries, MERGE_INTO_CURRENT)
+
+    /** Every item, also inside submenus. */
+    private fun allItems(entries: List<BranchPopupModel.Entry>): List<Item> =
+        entries.flatMap { if (it is Submenu) allItems(it.entries) else listOfNotNull(it as? Item) }
 }

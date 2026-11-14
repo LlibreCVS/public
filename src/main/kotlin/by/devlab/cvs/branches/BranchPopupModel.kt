@@ -17,6 +17,9 @@ sealed interface BranchChoice {
 
     /** Load the branch lists of [roots] again. */
     data class Refresh(val roots: List<Path>) : BranchChoice
+
+    /** Merge [source], a branch or the trunk, into what each of [roots] is on now (cvs-branch-merge decision 10). */
+    data class Merge(val source: SwitchTarget, val roots: List<Path>) : BranchChoice
 }
 
 /**
@@ -31,8 +34,8 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
     /** An entry; choosing it does [choice], or nothing when [choice] is null. [current] marks the current branch. */
     data class Item(val text: String, val choice: BranchChoice?, val current: Boolean = false, val enabled: Boolean = true) : Entry
 
-    /** A root's submenu. */
-    data class Submenu(val text: String, val entries: List<Entry>) : Entry
+    /** A root's or a branch's submenu; [current] marks the current branch. */
+    data class Submenu(val text: String, val entries: List<Entry>, val current: Boolean = false) : Entry
 
     /** A separator, with an optional title. */
     data class Separator(val text: String? = null) : Entry
