@@ -88,6 +88,8 @@ class BranchCreator(private val project: Project, private val prompts: BranchPro
                     continue
                 }
                 lists.add(root, branch)
+                // A recreated branch is on every file of the root now: its old counts no longer hold (decision 24).
+                if (root in existing) lists.forget(root, branch)
             }
             if (request.switch) {
                 // The tag and the switch run as two handlers, so that a branch made before a failed switch still enters

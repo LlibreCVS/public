@@ -39,9 +39,9 @@ class BranchListService(private val project: Project) : PersistentStateComponent
 
     /**
      * A root's remembered [branches], sorted, and when they were loaded from the server ([loadedAt], epoch millis);
-     * [files] is the number of the root's files and [coverage] the number of them carrying each branch (design
-     * decision 20). Absent counts (a branch made through New Branch…, a list remembered before the counts) mean the
-     * whole root.
+     * [files] is the number of the root's files, [coverage] the number of them carrying each branch and [missingDirs]
+     * the number of the root's directories holding files with none carrying it (design decisions 20, 23). Absent
+     * counts (a branch made through New Branch… or recreated, a list remembered before the counts) mean the whole root.
      */
     data class BranchList(
         val branches: List<String>,
@@ -50,11 +50,16 @@ class BranchListService(private val project: Project) : PersistentStateComponent
         val coverage: Map<String, Int> = emptyMap(),
         val missingDirs: Map<String, Int> = emptyMap(),
     ) {
-        /** How much of the root [branch] covers when it covers only part of it, or null for the whole root. */
+        /**
+         * How much of the root [branch] covers when some directory with files has none carrying it, or null for the
+         * whole root: a file added on the trunk after branching, next to files with the branch, does not count
+         * (design decision 23).
+         */
         fun partial(branch: String): Coverage? {
             val total = files ?: return null
             val covered = coverage[branch] ?: return null
-            return if (covered < total) Coverage(covered, total) else null
+            val missing = missingDirs[branch] ?: return null
+            return if (missing > 0) Coverage(covered, total) else null
         }
     }
 
@@ -95,6 +100,10 @@ class BranchListService(private val project: Project) : PersistentStateComponent
 
         @get:Attribute
         var files: Int = 0
+
+        /** The root's directories holding files with none carrying [branch], or -1 when unknown. */
+        @get:Attribute
+        var missingDirs: Int = -1
     }
 
     /** One load runs at a time; the roots of a load are loaded one after another. */
@@ -156,6 +165,12 @@ class BranchListService(private val project: Project) : PersistentStateComponent
 
     /** Drops the counts of [branch] in [root]'s list: it covers the whole root until the next load (design decision 24). */
     fun forget(root: Path, branch: String) {
+        synchronized(lock) {
+            val key = key(root)
+            val list = lists[key] ?: return
+            lists[key] = list.copy(coverage = list.coverage - branch, missingDirs = list.missingDirs - branch)
+        }
+        publish()
     }
 
     /** Adds [branch] to the remembered list of [root] without contacting the server (design decision 5). */
@@ -202,7 +217,7 @@ class BranchListService(private val project: Project) : PersistentStateComponent
         try {
             val log = BranchLog.read(project, root)
             synchronized(lock) {
-                lists[root] = BranchList(log.branches.sorted(), System.currentTimeMillis(), log.files, log.coverage)
+                lists[root] = BranchList(log.branches.sorted(), System.currentTimeMillis(), log.files, log.coverage, log.missingDirs)
             }
         } catch (e: Exception) {
             // A cancel or another control-flow exception ends the load; it is not the root's error (decision 22).
@@ -232,6 +247,7 @@ class BranchListService(private val project: Project) : PersistentStateComponent
                         BranchCount().apply {
                             branch = name
                             files = count
+                            missingDirs = list.missingDirs[name] ?: -1
                         }
                     }
                 }
@@ -246,7 +262,8 @@ class BranchListService(private val project: Project) : PersistentStateComponent
                 val path = BranchStateService.pathOf(root.path) ?: continue
                 val files = root.files.takeIf { it >= 0 }
                 val coverage = if (files == null) emptyMap() else root.counts.associate { it.branch to it.files }
-                lists[path] = BranchList(root.branches.distinct().sorted(), root.loadedAt, files, coverage)
+                val missingDirs = if (files == null) emptyMap() else root.counts.filter { it.missingDirs >= 0 }.associate { it.branch to it.missingDirs }
+                lists[path] = BranchList(root.branches.distinct().sorted(), root.loadedAt, files, coverage, missingDirs)
             }
         }
     }
@@ -273,9 +290,10 @@ internal object BranchLog {
 
     /**
      * What one `log` of a root gives: its [branches], the number of its [files] and, per branch, how many of them carry
-     * it ([coverage]). A file only in the repository's Attic (removed on the trunk) is not one of the root's files.
+     * it ([coverage]) and how many directories holding files have none carrying it ([missingDirs]). A file only in the
+     * repository's Attic (removed on the trunk) is not one of the root's files.
      */
-    class Result(val branches: Set<String>, val files: Int, val coverage: Map<String, Int>)
+    class Result(val branches: Set<String>, val files: Int, val coverage: Map<String, Int>, val missingDirs: Map<String, Int>)
 
     /**
      * The branches of the working copy [root]: a header-only `log` over the root through OpenCVS's [LogOperation], as
@@ -284,7 +302,10 @@ internal object BranchLog {
     fun read(project: Project, root: Path): Result {
         val operation = BranchLogOperation(root)
         CvsRunner.run(project, CommandCvsHandler("Load CVS branches", operation, true))?.let { throw IllegalStateException(it) }
-        return Result(operation.branches, operation.files, operation.coverage)
+        val missingDirs = operation.branches.associateWith { branch ->
+            operation.directories.size - operation.directoriesWith[branch].orEmpty().size
+        }
+        return Result(operation.branches, operation.files, operation.coverage, missingDirs)
     }
 
     /**
@@ -308,6 +329,10 @@ internal object BranchLog {
         var files = 0
         val coverage = HashMap<String, Int>()
 
+        /** The repository directories holding the root's files, and those holding a file with each branch. */
+        val directories = HashSet<String>()
+        val directoriesWith = HashMap<String, MutableSet<String>>()
+
         override fun fileInfoGenerated(info: Any?) {
             super.fileInfoGenerated(info)
             if (info is LogInformation) {
@@ -316,9 +341,17 @@ internal object BranchLog {
                 if (!inAttic(info)) {
                     files++
                     names.forEach { coverage.merge(it, 1, Int::plus) }
+                    val directory = directoryOf(info)
+                    directories += directory
+                    names.forEach { directoriesWith.getOrPut(it, ::HashSet) += directory }
                 }
             }
         }
+
+        /** The repository directory of the file's RCS file (or of its working file when the server named none). */
+        private fun directoryOf(info: LogInformation): String =
+            info.rcsFileName?.replace('\\', '/')?.substringBeforeLast('/', "")
+                ?: info.file?.parentFile?.path.orEmpty()
 
         /** Whether the file is in the repository's Attic: removed on the trunk, so not in a trunk working copy. */
         private fun inAttic(info: LogInformation): Boolean =

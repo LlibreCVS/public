@@ -113,7 +113,8 @@ private object DialogPrompts : BranchPrompts {
                 "come back with Back to Trunk.",
             "Switch to $branch",
             arrayOf("Switch", "Skip These Roots", Messages.getCancelButton()),
-            1,
+            // Switch by default: the user already chose the branch, the question only warns (design decision 23).
+            0,
             Messages.getWarningIcon(),
         )
         when (answer) {
