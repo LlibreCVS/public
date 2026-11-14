@@ -106,18 +106,24 @@ class BranchMerger(private val project: Project, private val prompts: BranchProm
             // Without MERGED, `-j A -j B` would treat every file as added between A and B: one -j from the branch point.
             val from = if (tags[merged].orEmpty().isNotEmpty()) merged else null
             val update = update(root, from, merging)
-            if (update.error != null) return update
-            val changed = LocalChanges.files(project, listOf(root))[root].orEmpty()
-            val files = changed.mapNotNull { file -> relative(root, file)?.let { it to entryRevision(file).orEmpty() } }.toMap()
-            if (files.isNotEmpty()) {
-                MergeService.getInstance(project).record(root, UnfinishedMerge(src, target, files, snapshot))
-            }
+            // Also after a failed update, which may have merged part of the files: they are tracked all the same.
+            recordChanged(root, UnfinishedMerge(src, target, emptyMap(), snapshot))
             return update
         } catch (e: Exception) {
             // A cancel or another control-flow exception ends the operation; it is not a root's failure.
             if (e is ControlFlowException) throw e
             return RootResult(e.message ?: e.toString())
         }
+    }
+
+    /**
+     * Records [merge] as [root]'s unfinished merge with every file the change list shows as changed in the root now and
+     * its `CVS/Entries` revision (decision 13); nothing when no file changed.
+     */
+    private fun recordChanged(root: Path, merge: UnfinishedMerge) {
+        val changed = LocalChanges.files(project, listOf(root))[root].orEmpty()
+        val files = changed.mapNotNull { file -> relative(root, file)?.let { it to entryRevision(file).orEmpty() } }.toMap()
+        if (files.isNotEmpty()) MergeService.getInstance(project).record(root, merge.copy(files = files))
     }
 
     /** `update -kk -j [from] -j to` of [root] (decisions 3, 16) through OpenCVS's update handler; reloads the root. */

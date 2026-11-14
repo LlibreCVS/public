@@ -47,7 +47,7 @@ internal object CvsTags {
         val messages = ArrayList<String>()
         val error = CvsRunner.run(project, CommandCvsHandler("Move merge point", operation, false)) { messages += it }
         return error
-            ?: messages.firstOrNull { CANNOT_FIND.matches(it.trim()) }
+            ?: messages.firstOrNull { CANNOT_FIND.matches(it.trim()) || "NOT MOVING" in it || "Not moving" in it }
             ?: if (!operation.executed) "rtag did not run: CVS root ${settings.cvsRootAsString} is offline or the login failed" else null
     }
 

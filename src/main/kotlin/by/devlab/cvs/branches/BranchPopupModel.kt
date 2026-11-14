@@ -96,8 +96,9 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
             val lists = roots.associate { it.path to service.list(it.path) }
             // While a branch operation runs, only Refresh Branch List can be chosen (design decision 21).
             val busy = BranchOperations.getInstance(project).isRunning
-            // The unfinished merges are re-checked for rolled-back files first (cvs-branch-merge decision 9), locally.
-            val merges = MergeService.getInstance(project).apply { refresh(fresh = false) }
+            // The unfinished merges are re-checked for rolled-back files once the change list is current (cvs-branch-merge
+            // decision 9), in the background: building the popup only reads them.
+            val merges = MergeService.getInstance(project).apply { refreshLater() }
 
             val entries = ArrayList<Entry>()
             if (busy) entries += Item(BranchOperations.IN_PROGRESS, null, enabled = false)

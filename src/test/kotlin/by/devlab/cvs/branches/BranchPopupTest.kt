@@ -298,7 +298,7 @@ class BranchPopupTest {
         val model = BranchPopupModel.build(project.get(), opening = true)
         println(model.render())
 
-        assertEquals(merge, MergeService.getInstance(project.get()).unfinished(a))
+        // A synchronous refresh would have dropped the merge before the entries were built; a later one may.
         assertTrue(items(model.entries).any { it.text == "merging BR_FIX: 1 file left" }, model.render())
     }
 

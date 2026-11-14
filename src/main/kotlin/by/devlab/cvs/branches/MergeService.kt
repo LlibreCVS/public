@@ -1,5 +1,6 @@
 package by.devlab.cvs.branches
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
@@ -82,6 +83,8 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
             for ((root, merge) in merges.entries.toList()) {
                 val names = files.mapNotNull { relative(root, it) }.filter { it in merge.files }
                 if (names.isEmpty()) continue
+                // A commit made after the root left the merge's target did not bring anything to it (decision 15).
+                if (!onTarget(root, merge)) continue
                 val left = merge.copy(files = merge.files - names.toSet(), committed = true)
                 merges[root] = left
                 changed = true
@@ -156,11 +159,14 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
         val name = BranchSwitcher.rootName(root)
         val title = "Merge of ${merge.source} into ${merge.target}"
         val error = try {
-            val now = CvsTags.revisions(project, root, setOf(merge.mergingTag))[merge.mergingTag].orEmpty()
-            if (now != merge.snapshot) {
-                "snapshot ${merge.mergingTag} was moved by another merge; ${merge.mergedTag} was not moved (use Forget Merge, then merge again)"
-            } else {
-                CvsTags.move(project, root, merge.mergingTag, merge.mergedTag)
+            val now = if (onTarget(root, merge)) CvsTags.revisions(project, root, setOf(merge.mergingTag))[merge.mergingTag].orEmpty() else null
+            when {
+                now == null -> "the root is no longer on ${targetText(merge.target)}; ${merge.mergedTag} was not moved"
+                // Only the files recorded before the merge are compared: a merge may bring files the first log could
+                // not see (a new directory), which carry the snapshot afterwards.
+                merge.snapshot.any { (path, revision) -> now[path] != revision } ->
+                    "snapshot ${merge.mergingTag} was moved by another merge; ${merge.mergedTag} was not moved (use Forget Merge, then merge again)"
+                else -> CvsTags.move(project, root, merge.mergingTag, merge.mergedTag)
             }
         } catch (e: Exception) {
             if (e is ControlFlowException) throw e
@@ -186,6 +192,25 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
             !Files.exists(file) -> false
             revision.startsWith("-") -> now == revision.removePrefix("-")
             else -> now == revision
+        }
+    }
+
+    /** Whether [root] is still on the merge's target: the trunk for `TRUNK`, else that branch. */
+    private fun onTarget(root: Path, merge: UnfinishedMerge): Boolean {
+        val state = BranchState.read(root)
+        return if (merge.target == TRUNK) state == BranchState.TRUNK else state == BranchState(BranchKind.BRANCH, merge.target)
+    }
+
+    private fun targetText(target: String): String = if (target == TRUNK) "the trunk" else target
+
+    /**
+     * Re-checks the unfinished merges once the change list has taken in what is pending (decision 9), in the
+     * background; for callers on the UI thread such as the popup, which must not act on a stale change list.
+     */
+    fun refreshLater() {
+        if (roots().isEmpty() || project.isDisposed) return
+        ChangeListManager.getInstance(project).invokeAfterUpdate(false) {
+            ApplicationManager.getApplication().executeOnPooledThread { if (!project.isDisposed) refresh(fresh = false) }
         }
     }
 
