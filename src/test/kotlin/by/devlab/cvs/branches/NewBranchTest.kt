@@ -186,6 +186,31 @@ class NewBranchTest {
         assertEquals(listOf(a.fileName.toString() to "branch covers only part of the root"), report!!.skipped)
     }
 
+    // A recreated branch covers the whole root: its old partial counts are dropped (design decision 24).
+    @Test
+    @DisplayName("Recreated branch covers the root")
+    fun recreatedBranchCoversTheRoot() {
+        val (a, _) = roots("recreatecounts")
+        session.branch("${a.fileName}/dir", "BR_SUB")
+        val lists = BranchListService.getInstance(project.get())
+        lists.load(listOf(a))
+        lists.awaitLoad()
+        refreshed(project.get())
+        assertNotNull(lists.list(a)!!.partial("BR_SUB"), "${lists.list(a)}")
+        prompts.newBranch = NewBranchRequest("BR_SUB", switch = false)
+        prompts.existing = ExistingBranchChoice.RECREATE
+        prompts.confirmRecreate = true
+
+        creator().create(listOf(a))
+        prompts.asked.clear()
+        BranchSwitcher(project.get(), prompts).switch(SwitchTarget.Branch("BR_SUB"), listOf(a))
+
+        println("${lists.list(a)}\n${prompts.asked}")
+        assertEquals(emptyList<String>(), prompts.asked)
+        assertSticky(a, "BR_SUB")
+        assertEquals(2, session.workingFiles(a).size, "no file left the working copy")
+    }
+
     private fun creator() = BranchCreator(project.get(), prompts)
 
     /**

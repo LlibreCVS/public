@@ -62,7 +62,11 @@ class BranchListTest {
         val root = temp.get().resolve("module-a")
         val backslash = Path.of(root.toString().replace('/', '\\'))
         val service = BranchListService(project.get())
-        service.set(backslash, listOf("BR_RELEASE", "BR_FIX"), 1_700_000_000_000L, files = 5, coverage = mapOf("BR_FIX" to 2, "BR_RELEASE" to 5))
+        service.set(
+            backslash, listOf("BR_RELEASE", "BR_FIX", "BR_OLD"), 1_700_000_000_000L, files = 5,
+            coverage = mapOf("BR_FIX" to 2, "BR_RELEASE" to 5, "BR_OLD" to 3),
+            missingDirs = mapOf("BR_FIX" to 1, "BR_RELEASE" to 0, "BR_OLD" to 0),
+        )
 
         val stored = XmlSerializer.serialize(service.state)
         println("stored state: ${com.intellij.openapi.util.JDOMUtil.write(stored)}")
@@ -71,11 +75,13 @@ class BranchListTest {
 
         val list = restarted.list(Path.of(root.toString().replace('\\', '/')))
         assertNotNull(list)
-        assertEquals(listOf("BR_FIX", "BR_RELEASE"), list!!.branches)
+        assertEquals(listOf("BR_FIX", "BR_OLD", "BR_RELEASE"), list!!.branches)
         assertEquals(1_700_000_000_000L, list.loadedAt)
-        // The file counts survive too (design decision 20): BR_FIX covers part of the root, BR_RELEASE all of it.
+        // The counts survive too (design decisions 20, 23): BR_FIX misses a directory, so it covers part of the root;
+        // BR_OLD misses files but no directory (files added after branching), so it covers the root like BR_RELEASE.
         assertEquals(BranchListService.Coverage(2, 5), list.partial("BR_FIX"))
         assertNull(list.partial("BR_RELEASE"))
+        assertNull(list.partial("BR_OLD"))
     }
 
     @Test

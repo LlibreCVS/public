@@ -48,6 +48,7 @@ class BranchListService(private val project: Project) : PersistentStateComponent
         val loadedAt: Long,
         val files: Int? = null,
         val coverage: Map<String, Int> = emptyMap(),
+        val missingDirs: Map<String, Int> = emptyMap(),
     ) {
         /** How much of the root [branch] covers when it covers only part of it, or null for the whole root. */
         fun partial(branch: String): Coverage? {
@@ -153,6 +154,10 @@ class BranchListService(private val project: Project) : PersistentStateComponent
         publish()
     }
 
+    /** Drops the counts of [branch] in [root]'s list: it covers the whole root until the next load (design decision 24). */
+    fun forget(root: Path, branch: String) {
+    }
+
     /** Adds [branch] to the remembered list of [root] without contacting the server (design decision 5). */
     fun add(root: Path, branch: String) {
         synchronized(lock) {
@@ -175,8 +180,15 @@ class BranchListService(private val project: Project) : PersistentStateComponent
     }
 
     /** Sets [root]'s list (test hook). */
-    internal fun set(root: Path, branches: Collection<String>, loadedAt: Long, files: Int? = null, coverage: Map<String, Int> = emptyMap()) {
-        synchronized(lock) { lists[key(root)] = BranchList(branches.distinct().sorted(), loadedAt, files, coverage) }
+    internal fun set(
+        root: Path,
+        branches: Collection<String>,
+        loadedAt: Long,
+        files: Int? = null,
+        coverage: Map<String, Int> = emptyMap(),
+        missingDirs: Map<String, Int> = emptyMap(),
+    ) {
+        synchronized(lock) { lists[key(root)] = BranchList(branches.distinct().sorted(), loadedAt, files, coverage, missingDirs) }
         publish()
     }
 

@@ -281,6 +281,27 @@ class BranchSwitchTest {
     }
 
     @Test
+    @DisplayName("Files added after branching do not make a branch partial")
+    fun filesAddedAfterBranchingDoNotMakeABranchPartial() {
+        val (a, _) = roots("added", branches = listOf("BR_RELEASE"))
+        val added = a.resolve("dir/new.txt")
+        TestData.write(added, "new on the trunk\n".toByteArray())
+        BranchFixtures.virtualFile(a).refresh(false, true)
+        session.add(project.get(), added)
+        session.commit(project.get(), listOf(added), "alice adds new on the trunk")
+        val lists = BranchListService.getInstance(project.get())
+        lists.load(listOf(a))
+        lists.awaitLoad()
+        println("list: ${lists.list(a)}")
+        refreshed(project.get())
+
+        switcher().switch(SwitchTarget.Branch("BR_RELEASE"), listOf(a))
+
+        assertEquals(emptyList<String>(), prompts.asked)
+        assertSticky(a, "BR_RELEASE")
+    }
+
+    @Test
     @DisplayName("Second operation refused")
     fun secondOperationRefused() {
         val (a, b) = roots("refused", branches = listOf("BR_RELEASE"))
