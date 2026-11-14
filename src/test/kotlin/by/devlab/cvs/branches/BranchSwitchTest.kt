@@ -317,6 +317,31 @@ class BranchSwitchTest {
         }
     }
 
+    @Test
+    @DisplayName("Merge refused during an operation")
+    fun mergeRefusedDuringAnOperation() {
+        val (a, b) = roots("merge-refused", branches = listOf("BR_RELEASE"))
+        val bob = session.checkout("bob", a.fileName.toString(), session.newDirectory("merge-refused-bob"), tag = "BR_RELEASE")
+        session.mapToCvs(project.get(), bob)
+        TestData.edit(bob.resolve(ONE), "one on the branch\n".toByteArray())
+        session.commit(project.get(), listOf(bob.resolve(ONE)), "bob changes one on the branch")
+        TestData.edit(a.resolve(TWO), "two, alice's edit\n".toByteArray())
+        val operations = BranchOperations.getInstance(project.get())
+        assertTrue(operations.tryStart())
+        try {
+            val (_, notification) = notified { BranchMerger(project.get(), prompts).start(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b)) }
+            val text = "${notification.title}\n${notification.content}"
+            println(text)
+            assertTrue(text.contains("CVS branch operation is already running"), text)
+            assertEquals(emptyList<String>(), prompts.asked)
+            assertEquals(null, session.tagOf("${a.fileName}/$ONE", "BR_RELEASE_MERGING_TRUNK"), "no snapshot tag")
+            assertEquals("one\n", TestData.text(a.resolve(ONE), Charsets.UTF_8))
+            assertTrue(operations.isRunning, "the running operation keeps the flag")
+        } finally {
+            operations.finish()
+        }
+    }
+
     // Review focus: the operation flag is always released, also after a cancel.
     @Test
     @DisplayName("Operation flag is released")

@@ -26,6 +26,12 @@ interface BranchPrompts {
     fun confirmSwitch(project: Project, target: String, changes: Map<String, Int>): Boolean
 
     /**
+     * Whether to merge [source] although the roots in [changes] (root name → number of changed files) have uncommitted
+     * changes, which the merge mixes with its own; the roots are also updated (cvs-branch-merge decisions 6, 13).
+     */
+    fun confirmMerge(project: Project, source: String, changes: Map<String, Int>): Boolean
+
+    /**
      * What to do with a switch to [branch], which covers only part of the roots in [coverage] (root name → its files
      * with the branch and all its files): the other files would leave the working copy (design decision 20).
      */
@@ -99,6 +105,9 @@ private object DialogPrompts : BranchPrompts {
             Messages.getWarningIcon(),
         ) == Messages.OK
     }
+
+    override fun confirmMerge(project: Project, source: String, changes: Map<String, Int>): Boolean =
+        throw NotImplementedError()
 
     override fun confirmPartialBranch(
         project: Project,

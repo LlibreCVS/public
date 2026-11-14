@@ -231,6 +231,49 @@ class MergeBranchesTest {
     }
 
     @Test
+    @DisplayName("Warning before a merge")
+    fun warningBeforeAMerge() {
+        val (a, b) = roots("warn", listOf("BR_FIX"))
+        commit(a, "BR_FIX", ONE, "one\nfix\n")
+        commit(b, "BR_FIX", ONE, "one\nfix\n")
+        TestData.edit(a.resolve(TWO), "two, alice's edit\n".toByteArray())
+        TestData.write(a.resolve("dir/three.txt"), "three\n".toByteArray())
+        session.add(project.get(), a.resolve("dir/three.txt"))
+        val stateWhenAsked = mutableListOf<Any?>()
+        prompts.onAsk = {
+            stateWhenAsked.addAll(listOf(a, b).map { session.tagOf("${module(it)}/$ONE", "BR_FIX_MERGING_TRUNK") })
+            stateWhenAsked.addAll(listOf(a, b).map { text(it, ONE) })
+        }
+
+        merger().merge(SwitchTarget.Branch("BR_FIX"), listOf(a, b))
+
+        println(prompts.asked)
+        assertEquals(listOf("merge BR_FIX: {${module(a)}=2}"), prompts.asked)
+        assertEquals(listOf(null, null, "one\n", "one\n"), stateWhenAsked, "no tag set and no file changed before the answer")
+        assertEquals("one\nfix\n", text(a, ONE))
+        assertEquals("one\nfix\n", text(b, ONE))
+    }
+
+    // Review focus: nothing, not even the snapshot tag, happens before the answer.
+    @Test
+    @DisplayName("Merge cancelled")
+    fun mergeCancelled() {
+        val (a, b) = roots("cancel", listOf("BR_FIX"))
+        commit(a, "BR_FIX", ONE, "one\nfix\n")
+        TestData.edit(a.resolve(TWO), "two, alice's edit\n".toByteArray())
+        prompts.confirmMerge = false
+        val before = contents(a) to contents(b)
+
+        val report = merger().merge(SwitchTarget.Branch("BR_FIX"), listOf(a, b))
+
+        assertNull(report)
+        assertEquals(1, prompts.asked.size, "${prompts.asked}")
+        assertNull(session.tagOf("${module(a)}/$ONE", "BR_FIX_MERGING_TRUNK"))
+        assertEquals(before, contents(a) to contents(b))
+        assertNull(MergeService.getInstance(project.get()).unfinished(a))
+    }
+
+    @Test
     @DisplayName("Keyword lines do not conflict")
     fun keywordLinesDoNotConflict() {
         val (a, _) = roots("keywords", listOf("BR_FIX"), one = "\$Revision\$\nline 1\nline 2\nline 3\n")

@@ -9,6 +9,7 @@ class TestPrompts(
     var existing: ExistingBranchChoice = ExistingBranchChoice.CANCEL,
     var confirmRecreate: Boolean = false,
     var partial: PartialBranchChoice = PartialBranchChoice.SWITCH,
+    var confirmMerge: Boolean = true,
 ) : BranchPrompts {
 
     /** The questions asked, as text. */
@@ -20,6 +21,12 @@ class TestPrompts(
         asked += "switch to $target: $changes"
         onAsk()
         return confirmSwitch
+    }
+
+    override fun confirmMerge(project: Project, source: String, changes: Map<String, Int>): Boolean {
+        asked += "merge $source: $changes"
+        onAsk()
+        return confirmMerge
     }
 
     override fun confirmPartialBranch(
