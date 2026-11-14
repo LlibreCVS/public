@@ -41,6 +41,7 @@ class MergeTrackingTest {
 
         const val ONE = "one.txt"
         const val TWO = "dir/two.txt"
+        const val THREE = "newdir/three.txt"
     }
 
     private val project = projectFixture(tempPathFixture(), openAfterCreation = true)
@@ -208,6 +209,58 @@ class MergeTrackingTest {
         assertEquals("one\nfix\n", text(a, ONE), "Forget Merge leaves the files as they are")
     }
 
+    // Code review: a merge that brings a new directory must still move its merge point.
+    @Test
+    @DisplayName("Merge bringing a new directory moves the merge point")
+    fun mergeBringingANewDirectoryMovesTheMergePoint() {
+        val (a, _) = roots("newdir", listOf("BR_FIX"))
+        val bob = commit(a, "BR_FIX", ONE, "one\nfix\n")
+        TestData.write(bob.resolve(THREE), "three\n".toByteArray())
+        session.add(project.get(), bob.resolve("newdir"), bob.resolve(THREE))
+        session.commit(project.get(), listOf(bob.resolve(THREE)), "bob adds newdir/three.txt on BR_FIX")
+        merger().merge(SwitchTarget.Branch("BR_FIX"), listOf(a))
+        assertEquals("three\n", text(a, THREE))
+        assertEquals(setOf(ONE, THREE), service().unfinished(a)!!.files.keys)
+
+        ideCommit(a.resolve(ONE), a.resolve(THREE))
+
+        assertEquals(tag(a, ONE, "BR_FIX_MERGING_TRUNK"), tag(a, ONE, "BR_FIX_MERGED_TRUNK"))
+        assertEquals(tag(a, THREE, "BR_FIX_MERGING_TRUNK"), tag(a, THREE, "BR_FIX_MERGED_TRUNK"))
+        assertNull(service().unfinished(a))
+    }
+
+    // Code review, decision 15: New Branch… with the switch leaves a root with an unfinished merge where it is.
+    @Test
+    @DisplayName("New Branch with switch skips a root with an unfinished merge")
+    fun newBranchWithSwitchSkipsARootWithAnUnfinishedMerge() {
+        val (a, b) = roots("newbranch", listOf("BR_FIX"))
+        commit(a, "BR_FIX", ONE, "one\nfix\n")
+        merger().merge(SwitchTarget.Branch("BR_FIX"), listOf(a))
+        prompts.newBranch = NewBranchRequest("BR_NEW", switch = true)
+
+        val report = BranchCreator(project.get(), prompts).create(listOf(a, b))
+
+        println(report?.text())
+        for (file in session.workingFiles(a)) assertEquals("", session.stickyTag(file), "sticky tag of $file")
+        for (file in session.workingFiles(b)) assertEquals("BR_NEW", session.stickyTag(file), "sticky tag of $file")
+        assertTrue(report!!.skipped.any { (root, reason) -> root == module(a) && "unfinished merge of BR_FIX" in reason }, report.text())
+    }
+
+    // Code review: a commit made after the root left the merge's target must not move the merge point.
+    @Test
+    @DisplayName("Commit on another branch does not move the merge point")
+    fun commitOnAnotherBranchDoesNotMoveTheMergePoint() {
+        val (a, _) = roots("elsewhere", listOf("BR_FIX", "BR_RELEASE"))
+        mergeBoth(a)
+        // Outside the plugin's switch (e.g. OpenCVS's Update dialog with a branch), the edits travel to BR_RELEASE.
+        session.updateWith(project.get(), a, CvsTestSession.UpdateOptions(branch = "BR_RELEASE"))
+
+        ideCommit(a.resolve(ONE), a.resolve(TWO))
+
+        assertNull(tag(a, ONE, "BR_FIX_MERGED_TRUNK"))
+        assertEquals(setOf(ONE, TWO), service().unfinished(a)!!.files.keys, "nothing reached the trunk")
+    }
+
     @Test
     @DisplayName("Switch skips a root with an unfinished merge")
     fun switchSkipsARootWithAnUnfinishedMerge() {
@@ -236,23 +289,29 @@ class MergeTrackingTest {
         assertEquals(setOf(ONE, TWO), service().unfinished(root)!!.files.keys)
     }
 
-    /** Commits [files] the way the commit dialog does: the plugin's checkin environment, then the merge handler. */
+    /**
+     * Commits [files] the way the commit dialog does: the merge handler's `beforeCheckin`, the plugin's checkin
+     * environment, then `checkinSuccessful`. The panel's selection is cleared before the success callback, as a
+     * non-modal commit lets the user change it meanwhile (code review): the handler must use what was committed.
+     */
     private fun ideCommit(vararg files: Path) {
+        val selected = files.map { Change(null, CurrentContentRevision(VcsUtil.getFilePath(it.toFile(), false))) }.toMutableList()
+        val handler = MergeCheckinHandlerFactory().createHandler(panel(project.get(), selected), CommitContext())
+        // The commit dialog calls both on the UI thread.
+        ApplicationManager.getApplication().invokeAndWait { handler.beforeCheckin() }
         session.commit(project.get(), files.toList(), "alice commits the merge")
-        val changes = files.map { Change(null, CurrentContentRevision(VcsUtil.getFilePath(it.toFile(), false))) }
-        val handler = MergeCheckinHandlerFactory().createHandler(panel(project.get(), changes), CommitContext())
-        // The commit dialog calls it on the UI thread.
+        selected.clear()
         ApplicationManager.getApplication().invokeAndWait { handler.checkinSuccessful() }
         awaitIdle()
     }
 
-    /** A commit dialog panel with [changes] selected, CVS affected. */
+    /** A commit dialog panel with [changes] selected (read at each call), CVS affected. */
     private fun panel(project: Project, changes: List<Change>): CheckinProjectPanel =
         Proxy.newProxyInstance(javaClass.classLoader, arrayOf(CheckinProjectPanel::class.java)) { _, method, _ ->
             when (method.name) {
                 "getProject" -> project
                 "vcsIsAffected" -> true
-                "getSelectedChanges" -> changes
+                "getSelectedChanges" -> changes.toList()
                 "getFiles" -> changes.map { it.afterRevision!!.file.ioFile }
                 "hashCode" -> 0
                 "equals" -> false

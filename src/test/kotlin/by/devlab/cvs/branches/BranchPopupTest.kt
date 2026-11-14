@@ -283,6 +283,25 @@ class BranchPopupTest {
         }
     }
 
+    // Code review: the popup must not act on a change list that may be stale; building it only reads the merges.
+    @Test
+    @DisplayName("Building the popup does not change unfinished merges")
+    fun buildingThePopupDoesNotChangeUnfinishedMerges() {
+        val a = workingCopy(temp.get(), "module-a")
+        mapToCvs(project.get(), a)
+        refreshed(project.get())
+        lists(a to listOf("BR_FIX"))
+        // An added file no longer in CVS/Entries would count as rolled back by a refresh.
+        val merge = MergeService.UnfinishedMerge("BR_FIX", "TRUNK", mapOf("added.txt" to "0"), emptyMap())
+        MergeService.getInstance(project.get()).record(a, merge)
+
+        val model = BranchPopupModel.build(project.get(), opening = true)
+        println(model.render())
+
+        assertEquals(merge, MergeService.getInstance(project.get()).unfinished(a))
+        assertTrue(items(model.entries).any { it.text == "merging BR_FIX: 1 file left" }, model.render())
+    }
+
     @Test
     @DisplayName("Load error shown by its first line")
     fun loadErrorShownByItsFirstLine() {
