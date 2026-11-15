@@ -71,11 +71,11 @@ intellijPlatform {
         id = "librecvs"
         name = "LibreCVS"
         vendor {
-            name = "Home Laboratory"
+            name = "Developers Laboratory"
         }
         description = """
             <p><b>LibreCVS is truly committed to the Open Source movement and recognizes no sanctions.</b></p>
-            <p><img src="https://devlab.by/PP4.webp" alt="LibreCVS"/></p>
+            <p><img src="https://devlab.by/PP4.png" width="1280" height="723" alt="LibreCVS"/></p>
             <p>LibreCVS takes part of the code of OpenCVS and reworks it to make working with branches in CVS simpler.
             It talks to CVS servers through Java libraries and never runs a <code>cvs</code> executable.</p>
             <p>Differences from OpenCVS:</p>

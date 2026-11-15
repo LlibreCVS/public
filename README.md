@@ -24,7 +24,7 @@ This repository adds:
 
 - `build.gradle.kts`: compiles the upstream sources (upstream's own Gradle build is not used) and gives
   upstream's `plugin.xml` this plugin's identity at build time (ID `librecvs`, name "LibreCVS",
-  vendor "Home Laboratory", since-build 261, no until-build). The upstream descriptor itself is not edited.
+  vendor "Developers Laboratory", since-build 261, no until-build). The upstream descriptor itself is not edited.
 - `src/test/kotlin`: tests of root detection, registration, connections and packaging.
 
 ## Upstream edits
