@@ -40,7 +40,7 @@ class VcsRegistrationTest {
         assertEquals("librecvs", plugin.pluginId.idString)
         assertEquals("LibreCVS", plugin.name)
         assertEquals("1.0.0", plugin.version)
-        assertEquals("Developers Laboratory", plugin.vendor)
+        assertEquals("Developer Lab", plugin.vendor)
         assertEquals("https://devlab.by", plugin.url)
         // The descriptor is OpenCVS's: nothing of upstream's identity may survive the build's patching.
         assertTrue(plugin.vendorEmail.isNullOrEmpty(), "vendor email: ${plugin.vendorEmail}")
