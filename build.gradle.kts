@@ -74,12 +74,25 @@ intellijPlatform {
             name = "Home Laboratory"
         }
         description = """
-            <p>CVS support for IntelliJ IDEA: browse repositories, check out and update working copies, commit
-            changes with an optional tag, annotate files, inspect history, and work with branches and tags.
-            The plugin talks to CVS servers through Java libraries and never runs a <code>cvs</code> executable;
-            local repositories (<code>:local:</code>) are not supported.</p>
-            <p>Built on a community fork of JetBrains' CVS plugin (Apache License 2.0); the bundled NOTICE names
-            the sources and their licenses.</p>
+            <p><b>LibreCVS is truly committed to the Open Source movement and recognizes no sanctions.</b></p>
+            <p><img src="https://devlab.by/PP4.webp" alt="LibreCVS"/></p>
+            <p>LibreCVS takes part of the code of OpenCVS and reworks it to make working with branches in CVS simpler.
+            It talks to CVS servers through Java libraries and never runs a <code>cvs</code> executable.</p>
+            <p>Differences from OpenCVS:</p>
+            <table border="1" cellpadding="4">
+              <tr><th>Area</th><th>OpenCVS</th><th>LibreCVS</th></tr>
+              <tr><td>IDE versions</td><td>2023.2 – 2026.2</td><td>2026.1 and later, no upper bound</td></tr>
+              <tr><td>Branch popup</td><td>—</td><td>One popup with branch actions, the branches common to all CVS roots and a per-root list; search; the current branch is marked</td></tr>
+              <tr><td>Switching branches</td><td>Per working copy</td><td>Switch to a branch or back to the trunk over all CVS roots at once, with a confirmation for uncommitted changes</td></tr>
+              <tr><td>Creating a branch</td><td>Per working copy</td><td>Over all CVS roots at once; an existing branch name is decided by the user</td></tr>
+              <tr><td>Branch indicator</td><td>—</td><td>Current branch in the main toolbar and the status bar, mixed working copies marked; the commit window names the branch</td></tr>
+              <tr><td>Merging</td><td>Manual merge of a branch</td><td>Merge into Current over the roots with merge-point tags; an unfinished merge is shown and can be completed or forgotten</td></tr>
+              <tr><td>Tagging a committed changeset</td><td>—</td><td>Put on Tag for a commit in the repository history (tags its files in the repository, no working copy needed)</td></tr>
+              <tr><td>Weekly tag</td><td>—</td><td>Commit and tag with the current week: tag <code>Dwwyyyy</code> (ISO 8601 week and year), moved on every commit of the week</td></tr>
+              <tr><td>Local repositories (<code>:local:</code>)</td><td>Runs a <code>cvs</code> executable</td><td>Rejected: no external programs are ever run</td></tr>
+              <tr><td>Cyrillic directory names</td><td>One encoding</td><td>Recognized in UTF-8 and in the encoding set in the CVS settings</td></tr>
+              <tr><td>Directory mappings</td><td>Valid only on a working-copy root</td><td>Valid on any directory of a working copy</td></tr>
+            </table>
         """.trimIndent()
         changeNotes = """
             <ul>
