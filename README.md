@@ -38,6 +38,7 @@ starts with `upstream-patch:`, and each edited place is marked with an `LibreCVS
 | `upstream-patch: accept mappings on any CVS working-copy directory` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/common/CvsRootChecker.java` | the IDE does not report a mapping of a tracked subdirectory as invalid |
 | `upstream-patch: reject local CVS repositories instead of running cvs` | `cvs-plugin/src/com/intellij/cvsSupport2/connections/IDEARootFormatter.java`, `cvs-plugin/src/com/intellij/cvsSupport2/config/ui/CvsRootFieldByFieldConfigurationPanel.java` | a local connection would launch a `cvs` executable |
 | `upstream-patch: expose a committed changeset's environment and repository paths` | `cvs-plugin/src/com/intellij/cvsSupport2/changeBrowser/CvsChangeList.java` | Put on Tag tags a changeset's files in the repository (`rtag`) without a working copy |
+| `upstream-patch: commit and tag with the current week` | `cvs-plugin/src/com/intellij/cvsSupport2/checkinProject/AdditionalOptionsPanel.java` and `.form`, `cvs-plugin/src/com/intellij/cvsSupport2/checkinProject/CvsCheckinEnvironment.java`, `cvs-plugin/src/com/intellij/cvsSupport2/cvshandlers/CommandCvsHandler.java`, `cvs-plugin/src/com/intellij/cvsSupport2/config/CvsConfiguration.java`, `cvs-core/resources/messages/CvsBundle.properties` | the commit options tag the committed files with the current week's tag `Dwwyyyy` and move it on every commit |
 
 List them with `git log --oneline --grep "^upstream-patch:"`.
 

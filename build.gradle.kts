@@ -88,6 +88,8 @@ intellijPlatform {
               <li>Working-copy roots follow the CVS entries; Cyrillic directory names match in UTF-8 and in the
                   encoding set in the CVS settings.</li>
               <li>Local CVS repositories are rejected instead of running a <code>cvs</code> executable.</li>
+              <li>Commit and tag with the current week: the committed files get the tag <code>Dwwyyyy</code>
+                  (ISO 8601 week and year), moved on every commit of the week.</li>
             </ul>
         """.trimIndent()
         // Explicit, so that a change of the plugin's defaults cannot add an upper bound.
