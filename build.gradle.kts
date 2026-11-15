@@ -71,7 +71,7 @@ intellijPlatform {
         id = "librecvs"
         name = "LibreCVS"
         vendor {
-            name = "Developers Laboratory"
+            name = "Developer Lab"
         }
         description = """
             <p><b>LibreCVS is truly committed to the Open Source movement and recognizes no sanctions.</b></p>
