@@ -26,6 +26,7 @@ import com.intellij.cvsSupport2.history.CvsRevisionNumber;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.cvsIntegration.CvsResult;
 import com.intellij.openapi.options.Configurable;
+import com.intellij.openapi.options.advanced.AdvancedSettings;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vcs.*;
 import com.intellij.openapi.vcs.annotate.AnnotationProvider;
@@ -41,6 +42,7 @@ import com.intellij.openapi.vcs.merge.MergeProvider;
 import com.intellij.openapi.vcs.rollback.RollbackEnvironment;
 import com.intellij.openapi.vcs.update.UpdateEnvironment;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.vcs.commit.CommitMode;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -168,6 +170,17 @@ public final class CvsVcs2 extends AbstractVcs implements TransactionProvider, E
   }
 
   /* =========================================================*/
+
+  /**
+   * LibreCVS upstream-patch: the IDE offers the Commit tool window only when every active VCS is distributed, which
+   * left CVS projects with the modal commit dialog; CVS asks for the non-modal mode, laid out as Advanced Settings say.
+   */
+  @Override
+  public @Nullable CommitMode getForcedCommitMode(@NotNull CommitMode commitMode) {
+    if (commitMode instanceof CommitMode.NonModalCommitMode) return commitMode;
+    return new CommitMode.NonModalCommitMode(AdvancedSettings.getBoolean("vcs.commit.tool.window"),
+                                             AdvancedSettings.getBoolean("vcs.non.modal.commit.toggle.ui"));
+  }
 
   public static CvsVcs2 getInstance(Project project) {
     return (CvsVcs2) ProjectLevelVcsManager.getInstance(project).findVcsByName(NAME);
