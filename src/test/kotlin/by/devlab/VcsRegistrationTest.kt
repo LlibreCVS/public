@@ -41,6 +41,7 @@ class VcsRegistrationTest {
         assertEquals("LibreCVS", plugin.name)
         assertEquals("1.0.0", plugin.version)
         assertEquals("Developers Laboratory", plugin.vendor)
+        assertEquals("https://devlab.by", plugin.url)
         // The descriptor is OpenCVS's: nothing of upstream's identity may survive the build's patching.
         assertTrue(plugin.vendorEmail.isNullOrEmpty(), "vendor email: ${plugin.vendorEmail}")
         assertTrue(plugin.vendorUrl.isNullOrEmpty(), "vendor url: ${plugin.vendorUrl}")
@@ -57,7 +58,7 @@ class VcsRegistrationTest {
             description.startsWith("<p><b>LibreCVS is truly committed to the Open Source movement and recognizes no sanctions.</b></p>"),
             description,
         )
-        assertTrue(description.contains("<img src=\"https://devlab.by/PP4.png\" width=\"1280\" height=\"723\""), description)
+        assertFalse(description.contains("<img"), description)
         assertTrue(description.contains("OpenCVS"), description)
         assertTrue(description.contains("<th>Area</th><th>OpenCVS</th><th>LibreCVS</th>"), description)
     }
