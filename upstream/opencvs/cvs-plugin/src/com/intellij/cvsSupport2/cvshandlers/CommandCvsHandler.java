@@ -190,6 +190,8 @@ public class CommandCvsHandler extends CvsHandler {
                                                Project project,
                                                final boolean tagFilesAfterCommit,
                                                final String tagName,
+                                               // LibreCVS upstream-patch: the caller decides whether an existing tag is moved.
+                                               final boolean overrideExistingTag,
                                                @NotNull final List<? extends File> dirsToPrune) {
     final CommitFilesOperation operation = new CommitFilesOperation(commitMessage, makeNewFilesReadOnly);
     if (selectedFiles != null) {
@@ -210,8 +212,7 @@ public class CommandCvsHandler extends CvsHandler {
     final CommandCvsHandler result = new CommandCvsHandler(title, operation, FileSetToBeUpdated.selectedFiles(selectedFiles));
 
     if (tagFilesAfterCommit) {
-      result.addOperation(new TagOperation(selectedFiles, tagName, false,
-                                           CvsConfiguration.getInstance(project).OVERRIDE_EXISTING_TAG_FOR_PROJECT));
+      result.addOperation(new TagOperation(selectedFiles, tagName, false, overrideExistingTag));
     }
 
     return result;

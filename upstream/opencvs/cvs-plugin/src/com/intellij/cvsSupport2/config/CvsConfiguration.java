@@ -57,6 +57,8 @@ public class CvsConfiguration implements PersistentStateComponent<CvsConfigurati
   public boolean TAG_AFTER_PROJECT_COMMIT;
   public boolean OVERRIDE_EXISTING_TAG_FOR_PROJECT = true;
   public String TAG_AFTER_PROJECT_COMMIT_NAME = "";
+  // LibreCVS upstream-patch: "Commit and tag with the current week" (tag Dwwyyyy, moved on every commit).
+  public boolean TAG_WITH_CURRENT_WEEK;
   public boolean CLEAN_COPY;
 
 

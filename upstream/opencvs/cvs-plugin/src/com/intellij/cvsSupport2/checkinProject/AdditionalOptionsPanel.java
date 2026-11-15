@@ -38,6 +38,8 @@ public class AdditionalOptionsPanel implements RefreshableOnComponent, TagNameFi
   private JCheckBox myTag;
   private JLabel myErrorLabel;
   private JCheckBox myOverrideExisting;
+  // LibreCVS upstream-patch: "Commit and tag with the current week"; when selected, the tag fields are not used.
+  private JCheckBox myWeekTag;
 
   private final CvsConfiguration myConfiguration;
   private boolean myIsCorrect = true;
@@ -52,11 +54,14 @@ public class AdditionalOptionsPanel implements RefreshableOnComponent, TagNameFi
         updateEnable();
       }
     });
+    myWeekTag.addActionListener(e -> updateEnable());
     CvsFieldValidator.installOn(this, myTagName.getTextField(), myErrorLabel, new AbstractButton[]{myTag});
   }
 
   private void updateEnable() {
-    final boolean tag = myTag.isSelected();
+    final boolean week = myWeekTag.isSelected();
+    myTag.setEnabled(!week);
+    final boolean tag = myTag.isSelected() && !week;
     myTagName.setEnabled(tag);
     myOverrideExisting.setEnabled(tag);
   }
@@ -65,6 +70,7 @@ public class AdditionalOptionsPanel implements RefreshableOnComponent, TagNameFi
   public void refresh() {
     myTagName.setText(myConfiguration.TAG_AFTER_PROJECT_COMMIT_NAME);
     myOverrideExisting.setSelected(false); // always reset override existing checkbox
+    myWeekTag.setSelected(myConfiguration.TAG_WITH_CURRENT_WEEK);
     updateEnable();
   }
 
@@ -76,6 +82,7 @@ public class AdditionalOptionsPanel implements RefreshableOnComponent, TagNameFi
     myConfiguration.TAG_AFTER_PROJECT_COMMIT = myTag.isSelected();
     myConfiguration.OVERRIDE_EXISTING_TAG_FOR_PROJECT = myOverrideExisting.isSelected();
     myConfiguration.TAG_AFTER_PROJECT_COMMIT_NAME = myTagName.getText().trim();
+    myConfiguration.TAG_WITH_CURRENT_WEEK = myWeekTag.isSelected();
   }
 
   @Override
@@ -101,6 +108,11 @@ public class AdditionalOptionsPanel implements RefreshableOnComponent, TagNameFi
 
   @Override
   public boolean tagFieldIsActive() {
-    return myTag.isSelected();
+    return myTag.isSelected() && !myWeekTag.isSelected();
+  }
+
+  @org.jetbrains.annotations.TestOnly
+  public JCheckBox weekTagCheckBox() {
+    return myWeekTag;
   }
 }

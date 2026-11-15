@@ -96,13 +96,16 @@ public class CvsCheckinEnvironment implements CheckinEnvironment {
 
     final CvsConfiguration cvsConfiguration = CvsConfiguration.getInstance(myProject);
 
+    // LibreCVS upstream-patch: the current week's tag replaces the tag-after-commit name and is always moved.
+    final boolean weekTag = cvsConfiguration.TAG_WITH_CURRENT_WEEK;
     CvsHandler handler = CommandCvsHandler.createCommitHandler(
       files,
       commitMessage,
       CvsBundle.message("operation.name.commit.file", files.length),
       cvsConfiguration.MAKE_NEW_FILES_READONLY, myProject,
-      cvsConfiguration.TAG_AFTER_PROJECT_COMMIT,
-      cvsConfiguration.TAG_AFTER_PROJECT_COMMIT_NAME,
+      weekTag || cvsConfiguration.TAG_AFTER_PROJECT_COMMIT,
+      weekTag ? by.devlab.cvs.tagging.WeekTag.current() : cvsConfiguration.TAG_AFTER_PROJECT_COMMIT_NAME,
+      weekTag || cvsConfiguration.OVERRIDE_EXISTING_TAG_FOR_PROJECT,
       dirsToPrune);
 
     executor.performActionSync(handler, CvsOperationExecutorCallback.EMPTY);
