@@ -50,11 +50,11 @@ class VcsRegistrationTest {
     }
 
     @Test
-    @DisplayName("Compatibility starts at build 262 and has no upper bound")
-    fun compatibilityStartsAtBuild262AndHasNoUpperBound() {
+    @DisplayName("Compatibility starts at build 261 and has no upper bound")
+    fun compatibilityStartsAtBuild261AndHasNoUpperBound() {
         val plugin = loadedPlugin()
 
-        assertEquals("262", plugin.sinceBuild)
+        assertEquals("261", plugin.sinceBuild)
         assertNull(plugin.untilBuild)
     }
 
