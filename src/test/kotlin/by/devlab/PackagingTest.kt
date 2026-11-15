@@ -3,6 +3,7 @@ package by.devlab
 import com.intellij.CvsBundle
 import com.intellij.testFramework.junit5.TestApplication
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -93,6 +94,15 @@ class PackagingTest {
         val factory = factories.singleOrNull { it.getAttribute("id") == "IntelliJCVS.BranchWidget" }
         checkNotNull(factory) { "no statusBarWidgetFactory IntelliJCVS.BranchWidget" }
         assertEquals("by.devlab.cvs.branches.BranchStatusBarWidgetFactory", factory.getAttribute("implementation"))
+    }
+
+    @Test
+    @DisplayName("Packaged descriptor carries no former name")
+    fun packagedDescriptorCarriesNoFormerName() {
+        val text = jarEntry("META-INF/plugin.xml")
+        assertFalse(text.contains("intellijcvs", ignoreCase = true), "the packaged descriptor still names IntelliJCVS")
+        val groups = descriptor().children("extensions").flatMap { it.children("notificationGroup") }
+        assertTrue(groups.any { it.getAttribute("id") == "LibreCVS" }, "no notification group LibreCVS")
     }
 
     /** The root element of the packaged plugin descriptor. */
