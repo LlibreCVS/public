@@ -75,7 +75,6 @@ intellijPlatform {
         }
         description = """
             <p><b>LibreCVS is truly committed to the Open Source movement and recognizes no sanctions.</b></p>
-            <p><img src="https://devlab.by/PP4.png" width="1280" height="723" alt="LibreCVS"/></p>
             <p>LibreCVS takes part of the code of OpenCVS and reworks it to make working with branches in CVS simpler.
             It talks to CVS servers through Java libraries and never runs a <code>cvs</code> executable.</p>
             <p>Differences from OpenCVS:</p>
@@ -134,7 +133,8 @@ kotlin {
 val descriptorAdditions = layout.projectDirectory.file("src/main/resources/META-INF/librecvs-additions.xml")
 
 // The vendor block can set the vendor's name but cannot drop the email and url of OpenCVS's vendor element, so
-// they are removed from the patched descriptor; the upstream file stays untouched (design decision 8).
+// they are removed from the patched descriptor, which also gets the plugin homepage (the url attribute of the root
+// element, which the plugin configuration cannot set); the upstream file stays untouched (design decision 8).
 tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PatchPluginXmlTask>("patchPluginXml") {
     inputs.file(descriptorAdditions)
     doLast {
@@ -145,6 +145,7 @@ tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PatchPluginXmlTask>("pa
             ?.groupValues?.get(1)
             ?: throw GradleException("no <idea-plugin> element in $descriptorAdditions")
         val patched = descriptor.readText().replace(Regex("""<vendor\b[^>]*>"""), "<vendor>")
+            .replaceFirst(Regex("""<idea-plugin\b[^>]*>"""), """<idea-plugin url="https://devlab.by">""")
         val end = patched.lastIndexOf("</idea-plugin>")
         if (end < 0) throw GradleException("no </idea-plugin> in $descriptor")
         descriptor.writeText(patched.substring(0, end) + additions.trim('\n') + "\n" + patched.substring(end))
