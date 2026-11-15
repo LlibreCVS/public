@@ -1,11 +1,16 @@
 package by.devlab.cvs
 
+import by.devlab.cvs.tagging.WeekTag
+import com.intellij.cvsSupport2.checkinProject.AdditionalOptionsPanel
+import com.intellij.cvsSupport2.config.CvsConfiguration
 import com.intellij.testFramework.junit5.TestApplication
+import com.intellij.testFramework.runInEdtAndWait
 import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -95,6 +100,80 @@ class CommitWithTagTest {
     }
 
     /** Imports a three-file module, checks it out as `alice` and maps the copy to CVS. */
+    @Test
+    @DisplayName("Week tag marks the committed revisions")
+    fun weekTagMarksTheCommittedRevisions() {
+        val copy = workingCopy("commit-week")
+        TestData.edit(copy.resolve("один.txt"), "один, неделя\n".toByteArray())
+        TestData.edit(copy.resolve("два.txt"), "два, неделя\n".toByteArray())
+
+        commitWithWeekTag(listOf(copy.resolve("один.txt"), copy.resolve("два.txt")), "правка недели", otherTag = "OTHER_TAG")
+
+        val week = WeekTag.current()
+        assertEquals("1.2", session.tagOf("commit-week/один.txt", week))
+        assertEquals("1.2", session.tagOf("commit-week/два.txt", week))
+        assertNull(session.tagOf("commit-week/три.txt", week), "три.txt was not committed and must not carry $week")
+        for (file in listOf("один.txt", "два.txt", "три.txt")) {
+            assertNull(session.tagOf("commit-week/$file", "OTHER_TAG"), "the tag-after-commit name must not be used")
+        }
+    }
+
+    @Test
+    @DisplayName("A second commit in the same week moves the week tag")
+    fun aSecondCommitInTheSameWeekMovesTheWeekTag() {
+        val copy = workingCopy("commit-week-move")
+        TestData.edit(copy.resolve("один.txt"), "один, первая\n".toByteArray())
+        TestData.edit(copy.resolve("два.txt"), "два, первая\n".toByteArray())
+        commitWithWeekTag(listOf(copy.resolve("один.txt"), copy.resolve("два.txt")), "первая правка недели")
+        TestData.edit(copy.resolve("один.txt"), "один, вторая\n".toByteArray())
+
+        commitWithWeekTag(listOf(copy.resolve("один.txt")), "вторая правка недели")
+
+        val week = WeekTag.current()
+        assertEquals("1.3", session.tagOf("commit-week-move/один.txt", week))
+        assertEquals("1.2", session.tagOf("commit-week-move/два.txt", week))
+    }
+
+    @Test
+    @DisplayName("The week option is remembered")
+    fun theWeekOptionIsRemembered() {
+        val configuration = CvsConfiguration.getInstance(project.get())
+        val previous = configuration.TAG_WITH_CURRENT_WEEK
+        try {
+            configuration.TAG_WITH_CURRENT_WEEK = false
+            runInEdtAndWait {
+                val panel = AdditionalOptionsPanel(configuration, emptyList(), project.get())
+                panel.restoreState()
+                assertFalse(panel.weekTagCheckBox().isSelected)
+                panel.weekTagCheckBox().isSelected = true
+                panel.saveState()
+
+                val shownAgain = AdditionalOptionsPanel(configuration, emptyList(), project.get())
+                shownAgain.restoreState()
+                assertTrue(shownAgain.weekTagCheckBox().isSelected)
+            }
+            assertTrue(configuration.TAG_WITH_CURRENT_WEEK)
+        } finally {
+            configuration.TAG_WITH_CURRENT_WEEK = previous
+        }
+    }
+
+    /** Commits [files] with "Commit and tag with the current week" selected and the tag-after-commit fields set to [otherTag]. */
+    private fun commitWithWeekTag(files: List<Path>, message: String, otherTag: String? = null) {
+        val configuration = CvsConfiguration.getInstance(project.get())
+        val previous = Triple(configuration.TAG_WITH_CURRENT_WEEK, configuration.TAG_AFTER_PROJECT_COMMIT, configuration.TAG_AFTER_PROJECT_COMMIT_NAME)
+        configuration.TAG_WITH_CURRENT_WEEK = true
+        configuration.TAG_AFTER_PROJECT_COMMIT = otherTag != null
+        configuration.TAG_AFTER_PROJECT_COMMIT_NAME = otherTag.orEmpty()
+        try {
+            session.commit(project.get(), files, message)
+        } finally {
+            configuration.TAG_WITH_CURRENT_WEEK = previous.first
+            configuration.TAG_AFTER_PROJECT_COMMIT = previous.second
+            configuration.TAG_AFTER_PROJECT_COMMIT_NAME = previous.third
+        }
+    }
+
     private fun workingCopy(module: String): Path {
         session.useEncoding(Charsets.UTF_8)
         val seed = session.newDirectory("$module-seed")
