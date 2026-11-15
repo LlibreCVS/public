@@ -39,6 +39,7 @@ starts with `upstream-patch:`, and each edited place is marked with an `LibreCVS
 | `upstream-patch: reject local CVS repositories instead of running cvs` | `cvs-plugin/src/com/intellij/cvsSupport2/connections/IDEARootFormatter.java`, `cvs-plugin/src/com/intellij/cvsSupport2/config/ui/CvsRootFieldByFieldConfigurationPanel.java` | a local connection would launch a `cvs` executable |
 | `upstream-patch: expose a committed changeset's environment and repository paths` | `cvs-plugin/src/com/intellij/cvsSupport2/changeBrowser/CvsChangeList.java` | Put on Tag tags a changeset's files in the repository (`rtag`) without a working copy |
 | `upstream-patch: commit and tag with the current week` | `cvs-plugin/src/com/intellij/cvsSupport2/checkinProject/AdditionalOptionsPanel.java` and `.form`, `cvs-plugin/src/com/intellij/cvsSupport2/checkinProject/CvsCheckinEnvironment.java`, `cvs-plugin/src/com/intellij/cvsSupport2/cvshandlers/CommandCvsHandler.java`, `cvs-plugin/src/com/intellij/cvsSupport2/config/CvsConfiguration.java`, `cvs-core/resources/messages/CvsBundle.properties` | the commit options tag the committed files with the current week's tag `Dwwyyyy` and move it on every commit |
+| `upstream-patch: create the admin reader per command operation` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/common/CvsCommandOperation.java` | the class initializer requested IDE services, which IntelliJ IDEA 2026.x reports as an error on the first CVS operation |
 
 List them with `git log --oneline --grep "^upstream-patch:"`.
 
