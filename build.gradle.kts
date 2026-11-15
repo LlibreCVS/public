@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "by.devlab"
-version = "0.1.0"
+version = "1.0.0"
 
 // OpenCVS (git subtree, see README.md) is compiled by this build, as its own build does: the Java sources, the
 // resource bundles that sit next to them, and its bundled SSH library. Upstream's build script is not used.
@@ -68,8 +68,8 @@ dependencies {
 intellijPlatform {
     pluginConfiguration {
         // The descriptor is OpenCVS's plugin.xml; the build gives it this plugin's identity.
-        id = "intellijcvs"
-        name = "IntelliJCVS"
+        id = "librecvs"
+        name = "LibreCVS"
         vendor {
             name = "Home Laboratory"
         }
@@ -97,8 +97,6 @@ intellijPlatform {
         }
     }
     pluginVerification {
-        // "IntelliJCVS" contains the restricted word "IntelliJ"; only this rule is muted.
-        freeArgs = listOf("-mute", "TemplateWordInPluginName")
         ides {
             current()
         }
