@@ -75,8 +75,6 @@ public abstract class CvsCommandOperation extends CvsOperation implements IFileI
                                                                           IModuleExpansionListener,
                                                                           ProjectContentInfoProvider {
 
-  private static final IAdminReader DEFAULT_ADMIN_READER = new AdminReaderOnCache();
-
   protected final IAdminReader myAdminReader;
   protected final IAdminWriter myAdminWriter;
 
@@ -85,7 +83,9 @@ public abstract class CvsCommandOperation extends CvsOperation implements IFileI
   private final UpdatedFilesManager myUpdatedFilesManager = new UpdatedFilesManager();
 
   protected CvsCommandOperation() {
-    this(DEFAULT_ADMIN_READER);
+    // LibreCVS upstream-patch: one admin reader per operation instead of a static one; building it requests the
+    // CvsEntriesManager and CvsApplicationLevelConfiguration services, which a class initializer must not do.
+    this(new AdminReaderOnCache());
   }
 
   protected CvsCommandOperation(IAdminReader adminReader, IAdminWriter adminWriter) {
