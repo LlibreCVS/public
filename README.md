@@ -1,6 +1,6 @@
 # LibreCVS
 
-CVS support for IntelliJ IDEA 2026.2 and later: browse repositories, check out and update working copies,
+CVS support for IntelliJ IDEA 2026.1 and later: browse repositories, check out and update working copies,
 commit with an optional tag, annotate files, inspect history, and work with branches and tags. The plugin
 talks to CVS servers (`pserver`, `ext`, `ssh`) through Java libraries and never runs a `cvs` executable, so
 local repositories (`:local:` or a bare path as CVSROOT) are rejected.
@@ -24,7 +24,7 @@ This repository adds:
 
 - `build.gradle.kts`: compiles the upstream sources (upstream's own Gradle build is not used) and gives
   upstream's `plugin.xml` this plugin's identity at build time (ID `librecvs`, name "LibreCVS",
-  vendor "Home Laboratory", since-build 262, no until-build). The upstream descriptor itself is not edited.
+  vendor "Home Laboratory", since-build 261, no until-build). The upstream descriptor itself is not edited.
 - `src/test/kotlin`: tests of root detection, registration, connections and packaging.
 
 ## Upstream edits
