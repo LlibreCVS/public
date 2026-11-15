@@ -177,6 +177,9 @@ public class CvsMessagesTranslator implements IFileInfoListener, IMessageListene
     }
 
     if (message.trim().isEmpty()) return;
+    // LibreCVS upstream-patch: a tagged message (MT: +updated, text U, fname X, newline, -updated) is a piece of a
+    // server line, never the continuation of the error or warning before it.
+    if (tagged) return;
     if (lastMessage == MessageType.ERROR) {
       myListener.addError(message, null, myCvsFileSystem, myCvsRoot, false);
     } else if (lastMessage == MessageType.WARNING) {

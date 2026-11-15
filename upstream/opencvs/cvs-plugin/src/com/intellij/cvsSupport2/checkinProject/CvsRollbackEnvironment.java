@@ -179,22 +179,38 @@ public class CvsRollbackEnvironment extends DefaultRollbackEnvironment {
             VcsBalloonProblemNotifier.showOverChangesView(
               myProject, CvsBundle.message("message.rollback.remote.canceled"), MessageType.WARNING);
           }
-          else if (!handler.getErrorsExceptAborted().isEmpty()) {
+          else if (!restoreFailures(handler).isEmpty()) {
             for (VcsException error : handler.getErrorsExceptAborted()) {
-              LOG.warn(error);
+              if (error.isWarning()) LOG.info(error.getMessage());
+              else LOG.warn(error);
             }
             VcsBalloonProblemNotifier.showOverChangesView(
               myProject,
-              CvsBundle.message("message.rollback.remote.failed", handler.getErrorsExceptAborted().size()),
+              CvsBundle.message("message.rollback.remote.failed", restoreFailures(handler).size()),
               MessageType.ERROR);
           }
           else {
+            for (VcsException warning : handler.getErrorsExceptAborted()) {
+              LOG.info(warning.getMessage());
+            }
             VcsBalloonProblemNotifier.showOverChangesView(
               myProject, CvsBundle.message("message.rollback.remote.completed", files.length), MessageType.INFO);
           }
         }
       });
     }, ModalityState.NON_MODAL);
+  }
+
+  /**
+   * LibreCVS upstream-patch: what Rollback reports as failed restores of the files a restore handler ran on: errors
+   * only, since a server warning such as "cvs update: warning: `X' was lost" comes with a successful restore.
+   */
+  public static @NotNull List<VcsException> restoreFailures(@NotNull CvsHandler handler) {
+    final List<VcsException> failures = new ArrayList<>();
+    for (VcsException error : handler.getErrorsExceptAborted()) {
+      if (!error.isWarning()) failures.add(error);
+    }
+    return failures;
   }
 
   private void refreshAfterRepositoryRestore(@NotNull FilePath[] files) {
