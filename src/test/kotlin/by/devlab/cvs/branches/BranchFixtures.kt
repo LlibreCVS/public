@@ -68,18 +68,18 @@ object BranchFixtures {
         Files.writeString(passwordFile, "$cvsRoot $scrambled\n", StandardOpenOption.APPEND)
     }
 
-    /** Runs [action] and returns its result with the one IntelliJCVS notification it shows in [project]. */
+    /** Runs [action] and returns its result with the one LibreCVS notification it shows in [project]. */
     fun <T> notified(project: Project, action: () -> T): Pair<T, Notification> {
         val shown = LinkedBlockingQueue<Notification>()
         val disposable = Disposer.newDisposable()
         try {
             project.messageBus.connect(disposable).subscribe(Notifications.TOPIC, object : Notifications {
                 override fun notify(notification: Notification) {
-                    if (notification.groupId == "IntelliJCVS") shown += notification
+                    if (notification.groupId == "LibreCVS") shown += notification
                 }
             })
             val result = action()
-            val notification = checkNotNull(shown.poll(60, TimeUnit.SECONDS)) { "no IntelliJCVS notification" }
+            val notification = checkNotNull(shown.poll(60, TimeUnit.SECONDS)) { "no LibreCVS notification" }
             assertTrue(shown.poll(1, TimeUnit.SECONDS) == null, "more than one notification")
             return result to notification
         } finally {

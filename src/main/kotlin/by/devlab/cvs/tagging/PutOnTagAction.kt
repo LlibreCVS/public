@@ -86,7 +86,7 @@ class PutOnTagAction(private val requests: TagRequestSource = DIALOG) : DumbAwar
     private fun files(count: Int) = "$count ${if (count == 1) "file" else "files"}"
 
     companion object {
-        const val GROUP = "IntelliJCVS"
+        const val GROUP = "LibreCVS"
 
         /**
          * A trunk revision has a two-part number; an import on the vendor branch 1.1.1 (`1.1.1.x`) also counts as

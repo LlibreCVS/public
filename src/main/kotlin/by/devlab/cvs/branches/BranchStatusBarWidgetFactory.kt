@@ -26,7 +26,7 @@ class BranchStatusBarWidgetFactory : StatusBarWidgetFactory {
     override fun canBeEnabledOn(statusBar: StatusBar): Boolean = true
 
     companion object {
-        const val ID = "IntelliJCVS.BranchWidget"
+        const val ID = "LibreCVS.BranchWidget"
     }
 }
 

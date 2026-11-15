@@ -1,11 +1,11 @@
 <!--
-  IntelliJCVS's own descriptor entries. The build merges the children of this <idea-plugin> into OpenCVS's
+  LibreCVS's own descriptor entries. The build merges the children of this <idea-plugin> into OpenCVS's
   plugin.xml, which stays untouched (tag-committed-changeset design decision 17); this file is not packaged.
 -->
 <idea-plugin>
   <extensions defaultExtensionNs="com.intellij">
-    <notificationGroup id="IntelliJCVS" displayType="BALLOON"/>
-    <statusBarWidgetFactory id="IntelliJCVS.BranchWidget"
+    <notificationGroup id="LibreCVS" displayType="BALLOON"/>
+    <statusBarWidgetFactory id="LibreCVS.BranchWidget"
                             implementation="by.devlab.cvs.branches.BranchStatusBarWidgetFactory"/>
     <vcs.branchStateProvider implementation="by.devlab.cvs.branches.CvsBranchStateProvider"/>
     <vcsCheckinHandlerFactory implementation="by.devlab.cvs.branches.MergeCheckinHandlerFactory"/>
@@ -17,12 +17,12 @@
   </projectListeners>
 
   <actions>
-    <action id="IntelliJCVS.PutOnTag" class="by.devlab.cvs.tagging.PutOnTagAction" text="Put on Tag..."
+    <action id="LibreCVS.PutOnTag" class="by.devlab.cvs.tagging.PutOnTagAction" text="Put on Tag..."
             description="Put a CVS tag on the latest trunk revisions of the files of the selected commit">
       <add-to-group group-id="CommittedChangesToolbar" anchor="last"/>
       <add-to-group group-id="ChangesViewPopupMenu" anchor="last"/>
     </action>
-    <action id="IntelliJCVS.BranchWidget" class="by.devlab.cvs.branches.BranchToolbarAction" text="CVS Branch"
+    <action id="LibreCVS.BranchWidget" class="by.devlab.cvs.branches.BranchToolbarAction" text="CVS Branch"
             description="The CVS branch, tag or date of the project's working copies">
       <add-to-group group-id="MainToolbarLeft" anchor="before" relative-to-action="MainToolbarGeneralActionsGroup"/>
     </action>

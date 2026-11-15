@@ -26,7 +26,7 @@ import kotlin.io.path.writeText
  * A missing program fails the tests instead of skipping them (design decision 11).
  */
 object CvsLocator {
-    const val PROPERTY = "intellijcvs.cvs"
+    const val PROPERTY = "librecvs.cvs"
 
     fun locate(property: String? = System.getProperty(PROPERTY), path: String? = System.getenv("PATH")): Path {
         if (!property.isNullOrBlank()) {

@@ -66,8 +66,8 @@ class PackagingTest {
         assertEquals("idea-plugin", root.tagName)
         // Only children of the root count: the platform ignores anything nested deeper.
         val actions = root.children("actions").flatMap { it.children("action") }
-        val action = actions.singleOrNull { it.getAttribute("id") == "IntelliJCVS.PutOnTag" }
-        checkNotNull(action) { "no action IntelliJCVS.PutOnTag under <actions> of the packaged descriptor" }
+        val action = actions.singleOrNull { it.getAttribute("id") == "LibreCVS.PutOnTag" }
+        checkNotNull(action) { "no action LibreCVS.PutOnTag under <actions> of the packaged descriptor" }
         assertEquals("by.devlab.cvs.tagging.PutOnTagAction", action.getAttribute("class"))
         assertEquals("Put on Tag...", action.getAttribute("text"))
         assertEquals(
@@ -75,7 +75,7 @@ class PackagingTest {
             action.children("add-to-group").map { it.getAttribute("group-id") }.toSet(),
         )
         val groups = root.children("extensions").flatMap { it.children("notificationGroup") }
-        assertTrue(groups.any { it.getAttribute("id") == "IntelliJCVS" }, "no notification group IntelliJCVS")
+        assertTrue(groups.any { it.getAttribute("id") == "LibreCVS" }, "no notification group LibreCVS")
     }
 
     @Test
@@ -83,16 +83,16 @@ class PackagingTest {
     fun branchWidgetSitsInTheMainToolbar() {
         val root = descriptor()
         val action = root.children("actions").flatMap { it.children("action") }
-            .singleOrNull { it.getAttribute("id") == "IntelliJCVS.BranchWidget" }
-        checkNotNull(action) { "no action IntelliJCVS.BranchWidget under <actions> of the packaged descriptor" }
+            .singleOrNull { it.getAttribute("id") == "LibreCVS.BranchWidget" }
+        checkNotNull(action) { "no action LibreCVS.BranchWidget under <actions> of the packaged descriptor" }
         assertEquals("by.devlab.cvs.branches.BranchToolbarAction", action.getAttribute("class"))
         val group = action.children("add-to-group").single()
         assertEquals("MainToolbarLeft", group.getAttribute("group-id"))
         assertEquals("before", group.getAttribute("anchor"))
         assertEquals("MainToolbarGeneralActionsGroup", group.getAttribute("relative-to-action"))
         val factories = root.children("extensions").flatMap { it.children("statusBarWidgetFactory") }
-        val factory = factories.singleOrNull { it.getAttribute("id") == "IntelliJCVS.BranchWidget" }
-        checkNotNull(factory) { "no statusBarWidgetFactory IntelliJCVS.BranchWidget" }
+        val factory = factories.singleOrNull { it.getAttribute("id") == "LibreCVS.BranchWidget" }
+        checkNotNull(factory) { "no statusBarWidgetFactory LibreCVS.BranchWidget" }
         assertEquals("by.devlab.cvs.branches.BranchStatusBarWidgetFactory", factory.getAttribute("implementation"))
     }
 
@@ -100,7 +100,9 @@ class PackagingTest {
     @DisplayName("Packaged descriptor carries no former name")
     fun packagedDescriptorCarriesNoFormerName() {
         val text = jarEntry("META-INF/plugin.xml")
-        assertFalse(text.contains("intellijcvs", ignoreCase = true), "the packaged descriptor still names IntelliJCVS")
+        // Split so that a search of the sources for the former name finds nothing.
+        val formerName = "IntelliJ" + "CVS"
+        assertFalse(text.contains(formerName, ignoreCase = true), "the packaged descriptor still names $formerName")
         val groups = descriptor().children("extensions").flatMap { it.children("notificationGroup") }
         assertTrue(groups.any { it.getAttribute("id") == "LibreCVS" }, "no notification group LibreCVS")
     }
@@ -119,13 +121,13 @@ class PackagingTest {
             zip.getInputStream(checkNotNull(zip.getEntry(name)) { "no $name in the jar" }).readBytes().toString(Charsets.UTF_8)
         }
 
-    /** Entry names of the plugin jar that the build passes in system property `intellijcvs.jar`. */
+    /** Entry names of the plugin jar that the build passes in system property `librecvs.jar`. */
     private fun jarEntries(): Set<String> =
         ZipFile(pluginJar().toFile()).use { zip -> zip.entries().asSequence().map { it.name }.toSet() }
 
-    /** The plugin jar that the build passes in system property `intellijcvs.jar`. */
+    /** The plugin jar that the build passes in system property `librecvs.jar`. */
     private fun pluginJar(): Path {
-        val jar = Path.of(checkNotNull(System.getProperty("intellijcvs.jar")) { "intellijcvs.jar is not set" })
+        val jar = Path.of(checkNotNull(System.getProperty("librecvs.jar")) { "librecvs.jar is not set" })
         check(Files.isRegularFile(jar)) { "no plugin jar at $jar" }
         return jar
     }

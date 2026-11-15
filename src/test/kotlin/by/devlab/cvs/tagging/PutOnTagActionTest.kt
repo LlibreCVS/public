@@ -187,7 +187,7 @@ class PutOnTagActionTest {
         try {
             project.get().messageBus.connect(disposable).subscribe(Notifications.TOPIC, object : Notifications {
                 override fun notify(notification: Notification) {
-                    if (notification.groupId == "IntelliJCVS") shown += notification
+                    if (notification.groupId == "LibreCVS") shown += notification
                 }
             })
             val action = PutOnTagAction { _, _ -> request }
@@ -196,7 +196,7 @@ class PutOnTagActionTest {
                 .add(VcsDataKeys.CHANGE_LISTS, arrayOf<CommittedChangeList>(changeset))
                 .build()
             runInEdtAndWait { action.actionPerformed(TestActionEvent.createTestEvent(action, context)) }
-            return checkNotNull(shown.poll(120, TimeUnit.SECONDS)) { "no IntelliJCVS notification" }
+            return checkNotNull(shown.poll(120, TimeUnit.SECONDS)) { "no LibreCVS notification" }
         } finally {
             Disposer.dispose(disposable)
         }

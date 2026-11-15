@@ -14,15 +14,15 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Not a test: the throwaway CVS server for the manual `runIde` checks of the branch popup (cvs-branch-popup task 5.1)
- * and of merging (cvs-branch-merge task 4.1). Runs only with `INTELLIJCVS_MANUAL_SERVER=true`: imports `module-a`
+ * and of merging (cvs-branch-merge task 4.1). Runs only with `LIBRECVS_MANUAL_SERVER=true`: imports `module-a`
  * (branches `BR_RELEASE`, `BR_FIX`, plain tag `RELEASE_1`) and `module-b` (branches `BR_RELEASE`, `BR_FIX`), lets bob
  * commit a change of `Main.txt` on `BR_FIX` in both, checks both out as alice into `build/manual/<name>`
- * (`INTELLIJCVS_MANUAL_DIR`, default `popup`), writes the project's CVS mappings and a password file there, prints the
+ * (`LIBRECVS_MANUAL_DIR`, default `popup`), writes the project's CVS mappings and a password file there, prints the
  * CVSROOT and the repository directory and keeps serving until `STOP` exists there (at most four hours). Never points
  * at a real server.
  */
 @TestApplication
-@EnabledIfEnvironmentVariable(named = "INTELLIJCVS_MANUAL_SERVER", matches = "true")
+@EnabledIfEnvironmentVariable(named = "LIBRECVS_MANUAL_SERVER", matches = "true")
 class ManualPopupServer {
 
     companion object {
@@ -35,7 +35,7 @@ class ManualPopupServer {
 
     @Test
     fun serve() {
-        val target = Path.of("build/manual", System.getenv("INTELLIJCVS_MANUAL_DIR") ?: "popup").toAbsolutePath().normalize()
+        val target = Path.of("build/manual", System.getenv("LIBRECVS_MANUAL_DIR") ?: "popup").toAbsolutePath().normalize()
         check(!Files.exists(target)) { "$target exists; delete it first" }
         Files.createDirectories(target)
         session.useEncoding(Charsets.UTF_8)

@@ -35,7 +35,7 @@ class BranchOperations(private val project: Project) {
      */
     fun queue(title: String, operation: () -> Unit) {
         if (!queueIfIdle(title, operation)) {
-            NotificationGroupManager.getInstance().getNotificationGroup("IntelliJCVS")
+            NotificationGroupManager.getInstance().getNotificationGroup("LibreCVS")
                 .createNotification(title, "A CVS branch operation is already running; nothing was changed.", NotificationType.WARNING)
                 .notify(project)
         }

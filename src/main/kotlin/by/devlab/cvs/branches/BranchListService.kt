@@ -34,7 +34,7 @@ fun interface BranchListListener {
  * Reading a list never contacts the server.
  */
 @Service(Service.Level.PROJECT)
-@State(name = "IntelliJCVS.BranchLists", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
+@State(name = "LibreCVS.BranchLists", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
 class BranchListService(private val project: Project) : PersistentStateComponent<BranchListService.ListsState>, Disposable {
 
     /**

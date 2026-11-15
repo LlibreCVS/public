@@ -59,7 +59,7 @@ internal object CvsRunner {
             report.conflicts.isNotEmpty() -> NotificationType.WARNING
             else -> NotificationType.INFORMATION
         }
-        NotificationGroupManager.getInstance().getNotificationGroup("IntelliJCVS")
+        NotificationGroupManager.getInstance().getNotificationGroup("LibreCVS")
             .createNotification(report.title, StringUtil.escapeXmlEntities(report.text()).replace("\n", "<br>"), type)
             .notify(project)
     }

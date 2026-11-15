@@ -30,7 +30,7 @@ fun interface MergeListener {
  * the workspace file across restarts, by the root's normalized path (the same for `C:\x` and `C:/x`).
  */
 @Service(Service.Level.PROJECT)
-@State(name = "IntelliJCVS.UnfinishedMerges", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
+@State(name = "LibreCVS.UnfinishedMerges", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
 class MergeService(private val project: Project) : PersistentStateComponent<MergeService.MergesState> {
 
     /**

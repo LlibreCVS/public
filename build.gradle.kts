@@ -46,7 +46,7 @@ dependencies {
         intellijIdea("2026.2.3")
         // Where AppLocker blocks executables under ~/.gradle, the IDE-running tasks (test, runIde, verifyPlugin)
         // use a JetBrains Runtime from an allowed folder instead of the one bundled with the downloaded IDE.
-        providers.gradleProperty("intellijcvs.jbr").orNull?.let { jetbrainsRuntimeLocal(it) }
+        providers.gradleProperty("librecvs.jbr").orNull?.let { jetbrainsRuntimeLocal(it) }
         // The JUnit 5 framework needs the platform test framework too: the test application loads its
         // TestProjectManager, which test-framework-junit5 does not bring.
         testFramework(TestFrameworkType.Platform)
@@ -114,7 +114,7 @@ kotlin {
 
 // The plugin's own descriptor entries (actions, extensions) live in a fragment that is merged into OpenCVS's
 // descriptor here instead of being packaged on its own (tag-committed-changeset design decision 17).
-val descriptorAdditions = layout.projectDirectory.file("src/main/resources/META-INF/intellijcvs-additions.xml")
+val descriptorAdditions = layout.projectDirectory.file("src/main/resources/META-INF/librecvs-additions.xml")
 
 // The vendor block can set the vendor's name but cannot drop the email and url of OpenCVS's vendor element, so
 // they are removed from the patched descriptor; the upstream file stays untouched (design decision 8).
@@ -135,7 +135,7 @@ tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PatchPluginXmlTask>("pa
 }
 
 tasks.processResources {
-    exclude("META-INF/intellijcvs-additions.xml")
+    exclude("META-INF/librecvs-additions.xml")
 }
 
 // Apache 2.0 section 4 and the Sun Public License attach to the distributed binary: the notice and every
@@ -165,5 +165,5 @@ tasks.test {
     // PackagingTest inspects the plugin jar that goes into the distribution.
     val pluginJar = tasks.named<org.jetbrains.intellij.platform.gradle.tasks.ComposedJarTask>("composedJar").flatMap { it.archiveFile }
     inputs.file(pluginJar)
-    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dintellijcvs.jar=${pluginJar.get().asFile}") })
+    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dlibrecvs.jar=${pluginJar.get().asFile}") })
 }
