@@ -1,4 +1,4 @@
-IntelliJCVS
+LibreCVS
 Copyright 2026 Home Laboratory
 
 This product is built from third-party code. Their licenses are packaged in the plugin jar
@@ -7,7 +7,7 @@ under META-INF/ and kept in the source tree under upstream/opencvs/.
 OpenCVS (https://github.com/jieyuexing/intellij-cvs-plugin), release 262.0.8
   Community fork of JetBrains' CVS plugin, maintained by jieyuexing.
   Licensed under the Apache License, Version 2.0 (META-INF/LICENSE).
-  IntelliJCVS changes a few of its files; README.md lists them.
+  LibreCVS changes a few of its files; README.md lists them.
 
 JetBrains CVS plugin (https://github.com/JetBrains/intellij-obsolete-plugins/tree/master/cvs)
   Copyright 2000-2016 JetBrains s.r.o.

@@ -187,7 +187,7 @@ public class FindAllRootsHelper {
   static boolean isTrackedChild(Path directory) throws IOException {
     Path parent = directory.getParent();
     if (parent == null || !isCvsWorkingCopyRoot(parent)) return false;
-    // IntelliJCVS upstream-patch: the admin files are decoded with each usual CVS encoding (the CVS settings'
+    // LibreCVS upstream-patch: the admin files are decoded with each usual CVS encoding (the CVS settings'
     // encoding, UTF-8, the OS encoding) and the name matches if any of them yields it, so Cyrillic names
     // written in UTF-8 or windows-1251 are recognized. A malformed decoding simply does not match.
     String name = directory.getFileName().toString();
@@ -220,7 +220,7 @@ public class FindAllRootsHelper {
     return parentRoot.equals(childRoot) && repositoryContinues;
   }
 
-  // IntelliJCVS upstream-patch: candidate encodings of CVS admin files, see isTrackedChild.
+  // LibreCVS upstream-patch: candidate encodings of CVS admin files, see isTrackedChild.
   private static @NotNull Set<Charset> adminFileCharsets() {
     Set<Charset> charsets = new LinkedHashSet<>();
     if (ApplicationManager.getApplication() != null) {

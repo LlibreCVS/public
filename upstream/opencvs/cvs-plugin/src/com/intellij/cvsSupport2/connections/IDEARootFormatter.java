@@ -42,7 +42,7 @@ public class IDEARootFormatter implements CvsRootSettingsBuilder<CvsConnectionSe
       throw new CvsRootException(CvsBundle.message("message.error.missing.cvs.root", cvsRootAsString));
     }
     if (method.equals(CvsMethod.LOCAL_METHOD)) {
-      // IntelliJCVS upstream-patch: a local connection runs a cvs executable, which this plugin never does.
+      // LibreCVS upstream-patch: a local connection runs a cvs executable, which this plugin never does.
       throw new CvsRootException("Local CVS repositories are not supported; use pserver, ext or ssh");
     }
     else if (method.equals(CvsMethod.PSERVER_METHOD)) {

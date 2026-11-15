@@ -168,13 +168,13 @@ public class CvsChangeList implements CommittedChangeList {
     return myDescription;
   }
 
-  // IntelliJCVS upstream-patch: read-only access to the connection and the repository paths of the changeset's
+  // LibreCVS upstream-patch: read-only access to the connection and the repository paths of the changeset's
   // files, so that a changeset can be tagged in the repository (rtag) without a working copy.
   public CvsEnvironment getEnvironment() {
     return myEnvironment;
   }
 
-  // IntelliJCVS upstream-patch: see getEnvironment.
+  // LibreCVS upstream-patch: see getEnvironment.
   public List<FileRevision> getFileRevisions() {
     final List<FileRevision> result = new ArrayList<>();
     for (RevisionWrapper wrapper : myRevisions) {
@@ -185,7 +185,7 @@ public class CvsChangeList implements CommittedChangeList {
   }
 
   /**
-   * IntelliJCVS upstream-patch: one file of a changeset — its path relative to the repository root (no leading
+   * LibreCVS upstream-patch: one file of a changeset — its path relative to the repository root (no leading
    * {@code /}, no {@code ,v}, outside the Attic), its revision number, and whether that revision removed the file.
    */
   public record FileRevision(@NotNull String path, @NotNull String number, boolean removal) {

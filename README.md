@@ -1,4 +1,4 @@
-# IntelliJCVS
+# LibreCVS
 
 CVS support for IntelliJ IDEA 2026.2 and later: browse repositories, check out and update working copies,
 commit with an optional tag, annotate files, inspect history, and work with branches and tags. The plugin
@@ -23,14 +23,14 @@ maintained fork of JetBrains' CVS plugin, kept as a squashed git subtree under `
 This repository adds:
 
 - `build.gradle.kts`: compiles the upstream sources (upstream's own Gradle build is not used) and gives
-  upstream's `plugin.xml` this plugin's identity at build time (ID `intellijcvs`, name "IntelliJCVS",
+  upstream's `plugin.xml` this plugin's identity at build time (ID `librecvs`, name "LibreCVS",
   vendor "Home Laboratory", since-build 262, no until-build). The upstream descriptor itself is not edited.
 - `src/test/kotlin`: tests of root detection, registration, connections and packaging.
 
 ## Upstream edits
 
 Upstream files are changed only where this plugin needs different behavior. Each edit is a commit whose message
-starts with `upstream-patch:`, and each edited place is marked with an `IntelliJCVS upstream-patch` comment:
+starts with `upstream-patch:`, and each edited place is marked with an `LibreCVS upstream-patch` comment:
 
 | Commit subject | File | Why |
 |---|---|---|
