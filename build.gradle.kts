@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "by.devlab"
-version = "1.0.0"
+version = "1.0.1"
 
 // OpenCVS (git subtree, see README.md) is compiled by this build, as its own build does: the Java sources, the
 // resource bundles that sit next to them, and its bundled SSH library. Upstream's build script is not used.
@@ -75,6 +75,7 @@ intellijPlatform {
         }
         description = """
             <p><b>LibreCVS is truly committed to the Open Source movement and recognizes no sanctions.</b></p>
+            <p>Plugin homepage: <a href="https://devlab.by">https://devlab.by</a></p>
             <p>LibreCVS takes part of the code of OpenCVS and reworks it to make working with branches in CVS simpler.
             It talks to CVS servers through Java libraries and never runs a <code>cvs</code> executable.</p>
             <p>Differences from OpenCVS:</p>
