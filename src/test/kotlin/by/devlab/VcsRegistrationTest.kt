@@ -44,9 +44,22 @@ class VcsRegistrationTest {
         // The descriptor is OpenCVS's: nothing of upstream's identity may survive the build's patching.
         assertTrue(plugin.vendorEmail.isNullOrEmpty(), "vendor email: ${plugin.vendorEmail}")
         assertTrue(plugin.vendorUrl.isNullOrEmpty(), "vendor url: ${plugin.vendorUrl}")
-        val description = plugin.description.orEmpty()
-        assertFalse(description.contains("OpenCVS"), description)
-        assertFalse(description.contains("jieyuexing"), description)
+        assertFalse(plugin.description.orEmpty().contains("jieyuexing"), plugin.description)
+    }
+
+    @Test
+    @DisplayName("Description states the commitment and the differences")
+    fun descriptionStatesTheCommitmentAndTheDifferences() {
+        val description = loadedPlugin().description.orEmpty()
+
+        // Starting with this statement also proves that OpenCVS's own description did not survive the patching.
+        assertTrue(
+            description.startsWith("<p><b>LibreCVS is truly committed to the Open Source movement and recognizes no sanctions.</b></p>"),
+            description,
+        )
+        assertTrue(description.contains("https://devlab.by/PP4.webp"), description)
+        assertTrue(description.contains("OpenCVS"), description)
+        assertTrue(description.contains("<th>Area</th><th>OpenCVS</th><th>LibreCVS</th>"), description)
     }
 
     @Test
