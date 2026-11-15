@@ -42,6 +42,7 @@ starts with `upstream-patch:`, and each edited place is marked with an `LibreCVS
 | `upstream-patch: create the admin reader per command operation` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/common/CvsCommandOperation.java` | the class initializer requested IDE services, which IntelliJ IDEA 2026.x reports as an error on the first CVS operation |
 | `upstream-patch: report a restore of deleted files without false errors` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/cvsMessages/CvsMessagesTranslator.java`, `cvs-plugin/src/com/intellij/cvsSupport2/checkinProject/CvsRollbackEnvironment.java` | Rollback of deleted files showed a red balloon and logged the server's protocol pieces as warnings although the files were restored |
 | `upstream-patch: read and set the read-only state of received files on disk` | `cvs-plugin/src/com/intellij/cvsSupport2/javacvsImpl/FileReadOnlyHandler.java` | `File.canWrite()` took half of a checkout's time on Windows, and changing the attribute through the VFS failed outside a write action |
+| `upstream-patch: commit CVS projects from the Commit tool window` | `cvs-plugin/src/com/intellij/cvsSupport2/CvsVcs2.java` | the IDE offers the Commit tool window only to distributed VCSs; CVS asks for it through `getForcedCommitMode` |
 
 List them with `git log --oneline --grep "^upstream-patch:"`.
 
