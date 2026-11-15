@@ -15,29 +15,34 @@
  */
 package com.intellij.cvsSupport2.javacvsImpl;
 
-import com.intellij.openapi.vfs.LocalFileSystem;
-import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.util.io.ReadOnlyAttributeUtil;
+import com.intellij.openapi.util.SystemInfo;
 import org.netbeans.lib.cvsclient.file.IFileReadOnlyHandler;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.DosFileAttributeView;
 
-/**
- * author: lesya
- */
 public class FileReadOnlyHandler implements IFileReadOnlyHandler{
+  // LibreCVS upstream-patch: the read-only state is read and changed on disk. File.canWrite() looked up the file's
+  // volume on every call on Windows (IntelliJ IDEA's NIO-backed java.io), which made it half of a checkout's time;
+  // changing it through the VFS failed outside a write action for a file the VFS already knew. The plugin refreshes
+  // the VFS after each CVS operation.
   @Override
   public void setFileReadOnly(File file, boolean readOnly) throws IOException {
+    final DosFileAttributeView dos = SystemInfo.isWindows ? dosView(file.toPath()) : null;
+    if (dos != null) {
+      if (dos.readAttributes().isReadOnly() == readOnly) return;
+      dos.setReadOnly(readOnly);
+      return;
+    }
     if (file.canWrite() != readOnly) return;
-    VirtualFile vf = LocalFileSystem.getInstance().findFileByIoFile(file);
-    if (vf != null) {
-      ReadOnlyAttributeUtil.setReadOnlyAttribute(vf, readOnly);
-    }
-    else {
-      // file not in VFS yet — fall back to java.io
-      //noinspection ResultOfMethodCallIgnored
-      file.setWritable(!readOnly);
-    }
+    //noinspection ResultOfMethodCallIgnored
+    file.setWritable(!readOnly);
+  }
+
+  private static DosFileAttributeView dosView(Path path) {
+    return Files.exists(path) ? Files.getFileAttributeView(path, DosFileAttributeView.class) : null;
   }
 }
