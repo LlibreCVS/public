@@ -94,13 +94,15 @@ intellijPlatform {
         """.trimIndent()
         // Explicit, so that a change of the plugin's defaults cannot add an upper bound.
         ideaVersion {
-            sinceBuild = "262"
+            sinceBuild = "261"
             untilBuild = provider { null }
         }
     }
     pluginVerification {
         ides {
             current()
+            // The earliest supported line (since-build 261).
+            create("IU", "2026.1.5")
         }
     }
 }
