@@ -37,8 +37,9 @@ class VcsRegistrationTest {
     fun pluginIsLoadedWithItsIdentity() {
         val plugin = loadedPlugin()
 
-        assertEquals("intellijcvs", plugin.pluginId.idString)
-        assertEquals("IntelliJCVS", plugin.name)
+        assertEquals("librecvs", plugin.pluginId.idString)
+        assertEquals("LibreCVS", plugin.name)
+        assertEquals("1.0.0", plugin.version)
         assertEquals("Home Laboratory", plugin.vendor)
         // The descriptor is OpenCVS's: nothing of upstream's identity may survive the build's patching.
         assertTrue(plugin.vendorEmail.isNullOrEmpty(), "vendor email: ${plugin.vendorEmail}")
@@ -107,9 +108,9 @@ class VcsRegistrationTest {
         checkNotNull(LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path)) { "no VFS file for $path" }
 
     private fun loadedPlugin(): IdeaPluginDescriptor {
-        val id = PluginId.getId("intellijcvs")
+        val id = PluginId.getId("librecvs")
         // getPlugin also returns installed plugins that are disabled; isLoaded proves the IDE loaded it.
-        check(PluginManagerCore.isLoaded(id)) { "the IDE did not load plugin intellijcvs" }
+        check(PluginManagerCore.isLoaded(id)) { "the IDE did not load plugin librecvs" }
         return checkNotNull(PluginManagerCore.getPlugin(id))
     }
 }
