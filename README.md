@@ -15,7 +15,7 @@ The plugin is published in a custom plugin repository. Add it once; after that t
 2. Click **+**, enter `https://devlab.by/plugins/updatePlugins.xml` and click **OK**.
 3. On the **Marketplace** tab find **LibreCVS**, click **Install** and restart the IDE.
 
-To install without the repository, download [LibreCVS-1.0.2.zip](https://devlab.by/plugins/LibreCVS-1.0.2.zip)
+To install without the repository, download [LibreCVS-1.0.3.zip](https://devlab.by/plugins/LibreCVS-1.0.3.zip)
 and choose **Install Plugin from Disk…** in the same gear menu.
 
 ## User guide

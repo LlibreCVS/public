@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "by.devlab"
-version = "1.0.2"
+version = "1.0.3"
 
 // OpenCVS (git subtree, see README.md) is compiled by this build, as its own build does: the Java sources, the
 // resource bundles that sit next to them, and its bundled SSH library. Upstream's build script is not used.
