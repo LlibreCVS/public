@@ -112,6 +112,12 @@ intellijPlatform {
         }
     }
     pluginVerification {
+        // Internal API usages are checked against verifier-allowed-internal-api.txt after the run (task verifyPlugin
+        // below) instead of failing on any of them; the other default failure levels stay.
+        failureLevel = listOf(
+            org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.COMPATIBILITY_PROBLEMS,
+            org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.OVERRIDE_ONLY_API_USAGES,
+        )
         ides {
             current()
             // The earliest supported line (since-build 261).
@@ -132,6 +138,27 @@ kotlin {
 // The plugin's own descriptor entries (actions, extensions) live in a fragment that is merged into OpenCVS's
 // descriptor here instead of being packaged on its own (tag-committed-changeset design decision 17).
 val descriptorAdditions = layout.projectDirectory.file("src/main/resources/META-INF/librecvs-additions.xml")
+
+// Fails on any internal IDE API usage that verifier-allowed-internal-api.txt does not list (commit-mode-internal-api).
+// The verifier writes one internal-api-usages.txt per checked IDE under the reports directory.
+tasks.named<org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask>("verifyPlugin") {
+    val reports = verificationReportsDirectory
+    val allowedFile = layout.projectDirectory.file("verifier-allowed-internal-api.txt")
+    inputs.file(allowedFile)
+    doLast {
+        val allowed = allowedFile.asFile.readLines().map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }.map(::Regex)
+        val usages = reports.get().asFile.walk().filter { it.name == "internal-api-usages.txt" }
+            .flatMap { file -> file.readLines().filter { it.isNotBlank() } }.toList()
+        val unexpected = usages.filter { usage -> allowed.none { it.containsMatchIn(usage) } }
+        if (unexpected.isNotEmpty()) {
+            throw GradleException(
+                "Internal IDE API usages not listed in verifier-allowed-internal-api.txt:\n" + unexpected.joinToString("\n")
+            )
+        }
+        logger.lifecycle("Internal IDE API usages: ${usages.size}, all listed in verifier-allowed-internal-api.txt")
+    }
+}
 
 // The vendor block can set the vendor's name but cannot drop the email and url of OpenCVS's vendor element, so
 // they are removed from the patched descriptor, which also gets the plugin homepage (the url attribute of the root

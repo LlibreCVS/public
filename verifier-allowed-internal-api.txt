@@ -1,0 +1,4 @@
+# Internal IDE API usages the user agreed to, one regular expression per line, matched against the lines of the
+# Plugin Verifier's internal-api-usages.txt. Any other internal API usage fails verifyPlugin.
+# commit-mode-internal-api: the non-modal commit mode for CVS (Commit tool window).
+^Internal constructor com\.intellij\.vcs\.commit\.CommitMode\.NonModalCommitMode\.<init>\(boolean isCommitTwEnabled, boolean isToggleMode\) is invoked in com\.intellij\.cvsSupport2\.CvsVcs2\.
