@@ -62,6 +62,7 @@ starts with `upstream-patch:`, and each edited place is marked with an `LibreCVS
 | `upstream-patch: save the Import into CVS settings as a persistent state component` | `cvs-plugin/src/com/intellij/cvsSupport2/config/ImportConfiguration.java` | IntelliJ IDEA 2026.x reported the `JDOMExternalizable` component as deprecated (a plugin error) when the Import into CVS wizard opened |
 | `upstream-patch: save the SSH passwords as a persistent state component` | `cvs-plugin/src/com/intellij/cvsSupport2/connections/ssh/SSHPasswordProviderImpl.java` | the same deprecation error on the first SSH connection |
 | `upstream-patch: fall back to the IDE's commit mode when the non-modal one cannot be created` | `cvs-plugin/src/com/intellij/cvsSupport2/CvsVcs2.java` | the non-modal commit mode is created through an internal IDE constructor (agreed, `verifier-allowed-internal-api.txt`); if an IDE build changes it, CVS keeps the IDE's own commit mode instead of failing |
+| `upstream-patch: run CVS operations outside a read action by default` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/common/CvsOperation.java` | operations such as `rtag`, `rlog`, Annotate and Tag held the read lock during the whole server exchange, so a slow server froze the IDE (a pending write action blocked the UI thread) |
 
 List them with `git log --oneline --grep "^upstream-patch:"`.
 
