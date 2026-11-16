@@ -39,7 +39,7 @@ class VcsRegistrationTest {
 
         assertEquals("librecvs", plugin.pluginId.idString)
         assertEquals("LibreCVS", plugin.name)
-        assertEquals("1.0.1", plugin.version)
+        assertEquals("1.0.2", plugin.version)
         assertEquals("Developer Lab", plugin.vendor)
         assertEquals("https://devlab.by", plugin.url)
         // The descriptor is OpenCVS's: nothing of upstream's identity may survive the build's patching.
