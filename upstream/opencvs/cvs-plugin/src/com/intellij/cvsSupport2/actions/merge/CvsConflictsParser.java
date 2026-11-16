@@ -6,7 +6,8 @@ import com.intellij.util.containers.Stack;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.StringReader;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -43,13 +44,20 @@ public class CvsConflictsParser {
   private CvsConflictsParser() {}
 
   public static CvsConflictsParser createOn(InputStream merged) throws IOException {
+    return createOn(merged, StandardCharsets.UTF_8);
+  }
+
+  // LibreCVS upstream-patch: read the merged file in its own encoding (UTF-8 garbled windows-1251 files) and keep its
+  // final line break, which every version would otherwise lose.
+  public static CvsConflictsParser createOn(InputStream merged, Charset charset) throws IOException {
     final CvsConflictsParser result = new CvsConflictsParser();
-    result.parseFile(merged);
+    result.parseFile(merged, charset);
     return result;
   }
 
-  private void parseFile(final InputStream merged) throws IOException {
-    final BufferedReader br = new BufferedReader(new InputStreamReader(merged, StandardCharsets.UTF_8));
+  private void parseFile(final InputStream merged, Charset charset) throws IOException {
+    final String text = new String(merged.readAllBytes(), charset);
+    final BufferedReader br = new BufferedReader(new StringReader(text));
     try {
       for (String line; (line = br.readLine()) != null; ) {
         if (!processLeftMarker(line) && !processRightMarker(line) && !processEndMarker(line)) {
@@ -59,6 +67,11 @@ public class CvsConflictsParser {
     }
     finally {
       br.close();
+    }
+    if (text.endsWith("\n") || text.endsWith("\r")) {
+      myLeftBuffer.append("\n");
+      myCenterBuffer.append("\n");
+      myRightBuffer.append("\n");
     }
   }
 

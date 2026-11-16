@@ -16,7 +16,7 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 
 /**
  * @author lesya
@@ -38,11 +38,13 @@ public class CvsMergeProvider implements MergeProvider {
       }
       final BufferedInputStream input = new BufferedInputStream(new FileInputStream(cvsFile));
       try {
-        final CvsConflictsParser parser = CvsConflictsParser.createOn(input);
+        // LibreCVS upstream-patch: the versions in the file's own encoding, not always UTF-8.
+        final Charset charset = file.getCharset();
+        final CvsConflictsParser parser = CvsConflictsParser.createOn(input, charset);
         final MergeData mergeData = new MergeData();
-        mergeData.ORIGINAL = parser.getCenterVersion().getBytes(StandardCharsets.UTF_8);
-        mergeData.CURRENT = parser.getLeftVersion().getBytes(StandardCharsets.UTF_8);
-        mergeData.LAST = parser.getRightVersion().getBytes(StandardCharsets.UTF_8);
+        mergeData.ORIGINAL = parser.getCenterVersion().getBytes(charset);
+        mergeData.CURRENT = parser.getLeftVersion().getBytes(charset);
+        mergeData.LAST = parser.getRightVersion().getBytes(charset);
         return mergeData;
       }
       finally {

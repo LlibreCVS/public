@@ -383,7 +383,9 @@ public final class CvsVcs2 extends AbstractVcs implements TransactionProvider, E
 
   @Override
   public MergeProvider getMergeProvider() {
-    if (myMergeProvider != null) {
+    // LibreCVS upstream-patch: create the provider when there is none (the check was inverted, so CVS never offered
+    // one and Resolve did nothing).
+    if (myMergeProvider == null) {
       myMergeProvider = new CvsMergeProvider();
     }
     return myMergeProvider;
