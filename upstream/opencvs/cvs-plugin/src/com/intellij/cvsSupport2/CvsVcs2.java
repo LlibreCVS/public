@@ -178,8 +178,22 @@ public final class CvsVcs2 extends AbstractVcs implements TransactionProvider, E
   @Override
   public @Nullable CommitMode getForcedCommitMode(@NotNull CommitMode commitMode) {
     if (commitMode instanceof CommitMode.NonModalCommitMode) return commitMode;
-    return new CommitMode.NonModalCommitMode(AdvancedSettings.getBoolean("vcs.commit.tool.window"),
-                                             AdvancedSettings.getBoolean("vcs.non.modal.commit.toggle.ui"));
+    return forcedNonModalMode(() -> new CommitMode.NonModalCommitMode(AdvancedSettings.getBoolean("vcs.commit.tool.window"),
+                                                                      AdvancedSettings.getBoolean("vcs.non.modal.commit.toggle.ui")));
+  }
+
+  /**
+   * LibreCVS upstream-patch: the constructor of the non-modal mode is internal IDE API (agreed by the user, see
+   * commit-mode-internal-api); if an IDE build changed or removed it, CVS forces no mode and the IDE keeps its own.
+   */
+  public static @Nullable CommitMode forcedNonModalMode(@NotNull java.util.function.Supplier<? extends CommitMode> nonModalMode) {
+    try {
+      return nonModalMode.get();
+    }
+    catch (LinkageError e) {
+      com.intellij.openapi.diagnostic.Logger.getInstance(CvsVcs2.class).warn("Cannot create the non-modal commit mode; the IDE keeps its own", e);
+      return null;
+    }
   }
 
   public static CvsVcs2 getInstance(Project project) {
