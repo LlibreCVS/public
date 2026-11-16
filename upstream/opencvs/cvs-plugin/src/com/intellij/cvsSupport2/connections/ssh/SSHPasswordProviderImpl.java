@@ -15,11 +15,11 @@
  */
 package com.intellij.cvsSupport2.connections.ssh;
 
-import com.intellij.openapi.components.NamedComponent;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.RoamingType;
 import com.intellij.openapi.components.ServiceManager;
-import com.intellij.openapi.util.InvalidDataException;
-import com.intellij.openapi.util.JDOMExternalizable;
-import com.intellij.openapi.util.WriteExternalException;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
 import java.util.HashMap;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
@@ -32,7 +32,10 @@ import java.util.Map;
 /**
  * author: lesya
  */
-public class SSHPasswordProviderImpl implements NamedComponent, JDOMExternalizable, SSHPasswordProvider {
+// LibreCVS upstream-patch: a PersistentStateComponent under the former component name and file (other.xml), so the
+// IDE does not report a deprecated JDOMExternalizable component and passwords saved by earlier versions still load.
+@State(name = "SSHPasswordProvider", storages = @Storage(value = "other.xml", roamingType = RoamingType.DISABLED))
+public class SSHPasswordProviderImpl implements PersistentStateComponent<Element>, SSHPasswordProvider {
   private final Map<String, String> myCvsRootToPasswordMap = new HashMap<>();
   private final Map<String, String> myCvsRootToStoringPasswordMap = new HashMap<>();
 
@@ -51,12 +54,6 @@ public class SSHPasswordProviderImpl implements NamedComponent, JDOMExternalizab
 
   public static SSHPasswordProviderImpl getInstance() {
     return ServiceManager.getService(SSHPasswordProviderImpl.class);
-  }
-
-  @Override
-  @NotNull
-  public String getComponentName() {
-    return "SSHPasswordProvider";
   }
 
   @Override
@@ -106,7 +103,8 @@ public class SSHPasswordProviderImpl implements NamedComponent, JDOMExternalizab
   }
 
   @Override
-  public void writeExternal(Element element) throws WriteExternalException {
+  public Element getState() {
+    Element element = new Element("state");
     if (!myCvsRootToStoringPasswordMap.isEmpty()) {
       Element passwords = new Element(PASSWORDS);
       for (final String cvsRoot : myCvsRootToStoringPasswordMap.keySet()) {
@@ -129,10 +127,11 @@ public class SSHPasswordProviderImpl implements NamedComponent, JDOMExternalizab
       }
       element.addContent(ppkPasswords);
     }
+    return element;
   }
 
   @Override
-  public void readExternal(Element element) throws InvalidDataException {
+  public void loadState(@NotNull Element element) {
     Element passwords = element.getChild(PASSWORDS);
     if (passwords != null) {
       for (Element passElement : passwords.getChildren(PASSWORD)) {
