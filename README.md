@@ -7,6 +7,22 @@ local repositories (`:local:` or a bare path as CVSROOT) are rejected.
 
 The plugin cannot be installed next to OpenCVS or JetBrains' CVS plugin: they register the same actions.
 
+## Installation
+
+The plugin is published in a custom plugin repository. Add it once; after that the IDE offers updates by itself.
+
+1. Open **Settings → Plugins**, click the gear icon next to the tabs and choose **Manage Plugin Repositories…**.
+2. Click **+**, enter `https://devlab.by/plugins/updatePlugins.xml` and click **OK**.
+3. On the **Marketplace** tab find **LibreCVS**, click **Install** and restart the IDE.
+
+To install without the repository, download [LibreCVS-1.0.1.zip](https://devlab.by/plugins/LibreCVS-1.0.1.zip)
+and choose **Install Plugin from Disk…** in the same gear menu.
+
+## User guide
+
+- [English (PDF)](https://devlab.by/plugins/LibreCVS-guide-en.pdf)
+- [Russian (PDF)](https://devlab.by/plugins/LibreCVS-guide-ru.pdf)
+
 ## Where the code comes from
 
 Almost all of the code is [OpenCVS](https://github.com/jieyuexing/intellij-cvs-plugin) release `262.0.8`, a
