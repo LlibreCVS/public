@@ -59,6 +59,8 @@ starts with `upstream-patch:`, and each edited place is marked with an `LibreCVS
 | `upstream-patch: report a restore of deleted files without false errors` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/cvsMessages/CvsMessagesTranslator.java`, `cvs-plugin/src/com/intellij/cvsSupport2/checkinProject/CvsRollbackEnvironment.java` | Rollback of deleted files showed a red balloon and logged the server's protocol pieces as warnings although the files were restored |
 | `upstream-patch: read and set the read-only state of received files on disk` | `cvs-plugin/src/com/intellij/cvsSupport2/javacvsImpl/FileReadOnlyHandler.java` | `File.canWrite()` took half of a checkout's time on Windows, and changing the attribute through the VFS failed outside a write action |
 | `upstream-patch: commit CVS projects from the Commit tool window` | `cvs-plugin/src/com/intellij/cvsSupport2/CvsVcs2.java` | the IDE offers the Commit tool window only to distributed VCSs; CVS asks for it through `getForcedCommitMode` |
+| `upstream-patch: save the Import into CVS settings as a persistent state component` | `cvs-plugin/src/com/intellij/cvsSupport2/config/ImportConfiguration.java` | IntelliJ IDEA 2026.x reported the `JDOMExternalizable` component as deprecated (a plugin error) when the Import into CVS wizard opened |
+| `upstream-patch: save the SSH passwords as a persistent state component` | `cvs-plugin/src/com/intellij/cvsSupport2/connections/ssh/SSHPasswordProviderImpl.java` | the same deprecation error on the first SSH connection |
 
 List them with `git log --oneline --grep "^upstream-patch:"`.
 
