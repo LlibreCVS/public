@@ -91,7 +91,9 @@ public abstract class CvsOperation {
 
   public abstract String getLastProcessedCvsRoot();
 
+  // LibreCVS upstream-patch: run the server exchange outside a read action by default. Held across network I/O,
+  // the read lock blocks every pending write action and, behind it, the UI thread for as long as the server takes.
   public boolean runInReadThread() {
-    return true;
+    return false;
   }
 }
