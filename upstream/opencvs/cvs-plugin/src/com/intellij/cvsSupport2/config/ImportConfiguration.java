@@ -2,19 +2,27 @@
 package com.intellij.cvsSupport2.config;
 
 import com.intellij.cvsSupport2.ui.experts.importToCvs.FileExtension;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.RoamingType;
 import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.util.DefaultJDOMExternalizer;
 import com.intellij.openapi.util.DifferenceFilter;
 import com.intellij.openapi.util.WriteExternalException;
 import com.intellij.openapi.util.text.StringUtil;
 import org.jdom.Element;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-public class ImportConfiguration extends AbstractConfiguration {
+// LibreCVS upstream-patch: a PersistentStateComponent under the former component name and file (other.xml), so the
+// IDE does not report a deprecated JDOMExternalizable component and settings saved by earlier versions still load.
+@State(name = "ImportConfiguration", storages = @Storage(value = "other.xml", roamingType = RoamingType.DISABLED))
+public class ImportConfiguration extends AbstractConfiguration implements PersistentStateComponent<Element> {
   public String VENDOR;
   public String RELEASE_TAG;
   public String LOG_MESSAGE;
@@ -59,5 +67,17 @@ public class ImportConfiguration extends AbstractConfiguration {
   @Override
   public void writeExternal(Element element) throws WriteExternalException {
     DefaultJDOMExternalizer.writeExternal(this, element, new DifferenceFilter<>(this, new ImportConfiguration()));
+  }
+
+  @Override
+  public Element getState() {
+    Element state = new Element("state");
+    writeExternal(state);
+    return state;
+  }
+
+  @Override
+  public void loadState(@NotNull Element state) {
+    readExternal(state);
   }
 }
