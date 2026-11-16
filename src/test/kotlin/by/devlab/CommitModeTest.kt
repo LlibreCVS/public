@@ -8,6 +8,7 @@ import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
 import com.intellij.vcs.commit.CommitMode
 import com.intellij.vcs.commit.CommitModeManager
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -26,6 +27,14 @@ class CommitModeTest {
         val forced = CvsVcs2.getInstance(project.get()).getForcedCommitMode(CommitMode.ModalCommitMode)
 
         assertTrue(forced is CommitMode.NonModalCommitMode, "forced commit mode: $forced")
+    }
+
+    @Test
+    @DisplayName("Commit mode falls back when the non-modal mode cannot be created")
+    fun commitModeFallsBackWhenTheNonModalModeCannotBeCreated() {
+        val forced = CvsVcs2.forcedNonModalMode { throw NoSuchMethodError("CommitMode\$NonModalCommitMode.<init>(ZZ)V") }
+
+        assertNull(forced, "forced commit mode: $forced")
     }
 
     @Test
