@@ -287,14 +287,17 @@ class DeleteBranchTest {
         commit(a, "BR_FIX", ONE, "one\nfix\n")
         session.tag(module(a), "BR_FIX_MERGED_TRUNK", "BR_FIX")
         session.tag(module(a), "TRUNK_MERGED_BR_FIX", "HEAD")
+        session.tag(module(a), "BR_FIX_MERGING_TRUNK", "BR_FIX")
+        session.tag(module(a), "TRUNK_MERGING_BR_FIX", "HEAD")
         remap(a)
 
         val report = deleter().delete("BR_FIX", listOf(a))
 
         println(report?.text())
         for (file in listOf(ONE, TWO)) {
-            assertNull(tag(a, file, "BR_FIX_MERGED_TRUNK"), "BR_FIX_MERGED_TRUNK of $file")
-            assertNull(tag(a, file, "TRUNK_MERGED_BR_FIX"), "TRUNK_MERGED_BR_FIX of $file")
+            for (merged in listOf("BR_FIX_MERGED_TRUNK", "TRUNK_MERGED_BR_FIX", "BR_FIX_MERGING_TRUNK", "TRUNK_MERGING_BR_FIX")) {
+                assertNull(tag(a, file, merged), "$merged of $file")
+            }
         }
     }
 
@@ -433,6 +436,58 @@ class DeleteBranchTest {
             assertNotNull(tag(root, ONE, "BR_FIX"), "BR_FIX of ${name(root)}")
             assertTrue("BR_FIX" in lists().list(root)!!.branches)
         }
+    }
+
+    // Code review: decision 15 must hold however each checkout's CVS/Root spells the same repository.
+    @Test
+    @DisplayName("Module locations compare one repository however CVS/Root spells it")
+    fun moduleLocationsCompareOneRepositoryHoweverCvsRootSpellsIt() {
+        val proj = CvsTags.locationKey(":pserver:alice@Host.example:/cvs", "proj")
+        assertEquals(proj, CvsTags.locationKey(":pserver:bob:secret@host.example:2401/cvs/", "proj"))
+        assertEquals(proj, CvsTags.locationKey(":pserver:host.example:/cvs", "/cvs/proj/"))
+        assertEquals(CvsTags.locationKey(":ext:alice@host.example:/cvs", "proj"), CvsTags.locationKey("bob@host.example:/cvs", "proj"))
+        assertTrue(BranchDeleter.overlap(CvsTags.locationKey(":pserver:host.example:/cvs", "."), proj))
+        assertTrue(BranchDeleter.overlap(proj, CvsTags.locationKey(":pserver:host.example:/cvs", "proj/sub")))
+        assertFalse(BranchDeleter.overlap(proj, CvsTags.locationKey(":pserver:host.example:/cvs", "proj2")))
+        assertFalse(BranchDeleter.overlap(proj, CvsTags.locationKey(":pserver:other.example:/cvs", "proj")))
+        // A protecting root whose module cannot be read protects every root (conservative).
+        assertTrue(BranchDeleter.overlap(null, proj, unknownOverlaps = true))
+        assertFalse(BranchDeleter.overlap(null, proj, unknownOverlaps = false))
+    }
+
+    // Code review: the branch head on a branch of a branch and on the import's vendor branch.
+    @Test
+    @DisplayName("Branch revisions on magic, nested and vendor branch numbers")
+    fun branchRevisionsOnMagicNestedAndVendorBranchNumbers() {
+        val revisions = listOf(
+            "1.2", "1.2.4.1", "1.2.4.3", "1.2.4.3.2.1", "1.2.40.1", "1.1.1.1", "1.1.1.1.2.1", "1.1.1.1.2.10", "1.1.1.1.2.9",
+        )
+        assertEquals(listOf("1.2.4.1", "1.2.4.3"), BranchDeleter.branchRevisions("1.2.0.4", revisions))
+        assertEquals(listOf("1.2.4.3.2.1"), BranchDeleter.branchRevisions("1.2.4.3.0.2", revisions))
+        assertEquals(listOf("1.1.1.1"), BranchDeleter.branchRevisions("1.1.1", revisions))
+        val vendorBranch = BranchDeleter.branchRevisions("1.1.1.1.0.2", revisions)
+        assertEquals("1.1.1.1.2.10", vendorBranch.maxWithOrNull(BranchDeleter.REVISION_ORDER))
+    }
+
+    // Code review: two checkouts named alike must stay two roots in the question.
+    @Test
+    @DisplayName("Same-named roots are listed apart")
+    fun sameNamedRootsAreListedApart() {
+        val (a, b) = roots("alike", listOf("BR_FIX"))
+        val twin = session.checkout("alice", module(a), session.newDirectory("alike-twin"))
+        BranchFixtures.mapToCvs(project.get(), a, b, twin)
+        refreshed(project.get())
+        lists().set(twin, listOf("BR_FIX"), System.currentTimeMillis())
+
+        val report = deleter().delete("BR_FIX", listOf(a, twin))
+
+        println(prompts.asked.joinToString("\n"))
+        println(report?.text())
+        val first = prompts.asked[0]
+        assertTrue("${a.parent.fileName}/${name(a)}=0" in first, first)
+        assertTrue("${twin.parent.fileName}/${name(twin)}=0" in first, first)
+        assertEquals(2, report!!.switched.size, report.text())
+        assertNull(tag(a, ONE, "BR_FIX"))
     }
 
     private fun lists() = BranchListService.getInstance(project.get())
