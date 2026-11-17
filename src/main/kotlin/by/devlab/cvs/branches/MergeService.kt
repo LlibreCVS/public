@@ -70,6 +70,12 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
     /** Whether a merge became fully committed and its merge point still has to be moved. */
     private val pending = AtomicBoolean()
 
+    /**
+     * The merges forgotten because every file was rolled back, by root, whose snapshot is still to be deleted; kept
+     * only in memory, so a restart leaves such a snapshot in the repository.
+     */
+    private val rolledBackMerges = ConcurrentHashMap<Path, UnfinishedMerge>()
+
     /** The roots whose merge point could not be moved (snapshot moved, CVS error) this session; not retried by itself. */
     private val stuck: MutableSet<Path> = ConcurrentHashMap.newKeySet()
 
@@ -129,8 +135,11 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
                         merges[root] = left
                         pending.set(true)
                     }
-                    // Every file rolled back: forgotten without moving anything.
-                    else -> merges.remove(root)
+                    // Every file rolled back: forgotten without moving anything; its snapshot is deleted later.
+                    else -> {
+                        merges.remove(root)
+                        rolledBackMerges[root] = merge
+                    }
                 }
                 if (rolledBack.isNotEmpty() || left.files.isEmpty() && !left.committed) changed = true
             }
@@ -139,13 +148,26 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
         settleLater()
     }
 
-    /** Moves the merge points of the fully committed merges in a background branch operation, or later when one runs. */
+    /**
+     * Moves the merge points of the fully committed merges and deletes the snapshots of the rolled-back ones in a
+     * background branch operation, or later when one runs.
+     */
     private fun settleLater() {
-        if (!pending.get() || project.isDisposed) return
+        if (!pending.get() && rolledBackMerges.isEmpty() || project.isDisposed) return
         BranchOperations.getInstance(project).queueIfIdle("Moving CVS merge points") {
             pending.set(false)
             val done = synchronized(lock) { merges.filter { (root, it) -> it.files.isEmpty() && it.committed && root !in stuck }.keys.toList() }
             for (root in done) moveMergePoint(root)?.let { CvsRunner.notify(project, it) }
+            for (root in rolledBackMerges.keys.toList()) {
+                val merge = rolledBackMerges.remove(root) ?: continue
+                // A new merge of the same source into the same target owns the snapshot now.
+                if (unfinished(root)?.mergingTag == merge.mergingTag) continue
+                val note = snapshotNotDeleted(merge, deleteSnapshot(root, merge)) ?: continue
+                CvsRunner.notify(
+                    project,
+                    BranchReport("Merge of ${merge.source} into ${merge.target}", emptyList(), emptyList(), emptyList(), emptyList(), notes = listOf(note)),
+                )
+            }
         }
     }
 
@@ -183,6 +205,21 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
         return BranchReport(
             title, listOf(name), emptyList(), emptyList(), emptyList(), switchedLabel = "Merge point ${merge.mergedTag} moved", notes = notes,
         )
+    }
+
+    /**
+     * Deletes [merge]'s snapshot from [root]'s module when it still marks the revisions recorded for the merge; returns
+     * why it was not deleted (moved by another merge, CVS error), or null when it was.
+     */
+    private fun deleteSnapshot(root: Path, merge: UnfinishedMerge): String? {
+        val now = try {
+            CvsTags.revisions(project, root, setOf(merge.mergingTag))[merge.mergingTag].orEmpty()
+        } catch (e: Exception) {
+            if (e is ControlFlowException) throw e
+            return e.message ?: e.toString()
+        }
+        if (merge.snapshot.any { (path, revision) -> now[path] != revision }) return "it was moved by another merge"
+        return deleteTag(root, merge.mergingTag)
     }
 
     /** `rtag -d [tag]` of [root]'s module: the CVS error, or null. */
@@ -245,14 +282,19 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
         return report
     }
 
-    /** Forget Merge: forgets [root]'s unfinished merge without moving its merge point and reports it (decision 8). */
+    /**
+     * Forget Merge: forgets [root]'s unfinished merge without moving its merge point, deletes its snapshot while it is
+     * still this merge's and reports it (decision 8); talks to the server, so never on the UI thread.
+     */
     fun forget(root: Path): BranchReport? {
         val merge = unfinished(root) ?: return null
         stuck.remove(key(root))
         drop(root)
+        // Forgotten even when the snapshot stays: the merge itself is over (merge-drop-merging-tag).
+        val notes = listOfNotNull(snapshotNotDeleted(merge, deleteSnapshot(root, merge)))
         val report = BranchReport(
             "Merge of ${merge.source} into ${merge.target}", listOf(BranchSwitcher.rootName(root)), emptyList(), emptyList(),
-            emptyList(), switchedLabel = "Forgotten, ${merge.mergedTag} not moved",
+            emptyList(), switchedLabel = "Forgotten, ${merge.mergedTag} not moved", notes = notes,
         )
         CvsRunner.notify(project, report)
         return report
