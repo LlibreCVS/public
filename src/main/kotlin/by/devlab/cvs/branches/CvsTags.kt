@@ -117,19 +117,42 @@ internal object CvsTags {
     private val NO_REVISION = Regex("""warning: no revision `.*' in `""")
 
     /**
-     * Where the module of the working copy [root] lives: its CVS root without the user, then the module path
-     * (`:pserver:host:port/cvsroot/module`), or null without `CVS/Repository`. Read from the working copy only.
+     * Where the module of the working copy [root] lives, as [locationKey] of its `CVS/Root` and `CVS/Repository`, or
+     * null when they cannot be read. Read from the working copy only.
      */
     fun moduleLocation(root: Path): String? {
         val dir = directory(root) ?: return null
         val settings = CvsEntriesManager.getInstance().getCvsConnectionSettingsFor(dir)
         val module = CvsEntriesManager.getInstance().getRepositoryFor(dir)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        val cvsRoot = settings.cvsRootAsString.replace(USER, "$1").trimEnd('/')
-        return "$cvsRoot/${modulePath(settings, module).trim('/')}"
+        return locationKey(settings.cvsRootAsString, module)
     }
 
-    /** The user part of a CVS root (`:pserver:alice@`); group 1 is the method. */
-    private val USER = Regex("""^(:[^:]+:)[^@:/]*@""")
+    /**
+     * One spelling for the module [module] (a `CVS/Repository` line) of the repository [cvsRoot] (a `CVS/Root` line),
+     * so that two checkouts of one module compare equal (cvs-branch-delete decision 15): `method://host:port/path`,
+     * without the user and password, the host in lower case, the pserver port 2401 when none is given, an implicit
+     * `user@host:path` as `ext`, and the module `.` as the repository itself.
+     */
+    internal fun locationKey(cvsRoot: String, module: String): String {
+        var rest = cvsRoot.trim()
+        var method = "local"
+        if (rest.startsWith(":")) {
+            method = rest.substring(1).substringBefore(':').substringBefore(';').lowercase()
+            rest = rest.substring(1).substringAfter(':')
+        } else if (!rest.startsWith("/") && Regex("^[^/]*:").containsMatchIn(rest) && !Regex("^[A-Za-z]:[/\\\\]").containsMatchIn(rest)) {
+            method = "ext"
+        }
+        val pathStart = rest.indexOf('/').let { if (it < 0) rest.length else it }
+        val server = rest.substring(0, pathStart).let { if ('@' in it) it.substringAfterLast('@') else it }
+        val repository = rest.substring(pathStart).replace('\\', '/').trimEnd('/')
+        val host = server.substringBefore(':').lowercase()
+        val port = server.substringAfter(':', "").trim(':').ifEmpty { if (method == "pserver") "2401" else "" }
+        val base = if (host.isEmpty()) "$method:$repository" else "$method://$host:$port$repository"
+        val path = module.replace('\\', '/').trim().let {
+            if (repository.isNotEmpty() && (it == repository || it.startsWith("$repository/"))) it.removePrefix(repository) else it
+        }.trim('/')
+        return if (path.isEmpty() || path == ".") base else "$base/$path"
+    }
 
     /** [module] (a `CVS/Repository` line) as a path relative to the repository root. */
     private fun modulePath(settings: CvsConnectionSettings, module: String): String {

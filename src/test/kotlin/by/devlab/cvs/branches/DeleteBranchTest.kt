@@ -531,11 +531,15 @@ class DeleteBranchTest {
 
     private fun name(root: Path): String = root.fileName.toString()
 
-    /** A second checkout of [root]'s module as alice, in a directory named `<root>-copy`. */
+    /**
+     * A second working copy of [root]'s module, named `<root>-copy`: a copy of [root] with its `CVS/` files. Renaming a
+     * fresh checkout instead fails now and then on Windows (AccessDeniedException while the IDE still holds it).
+     */
     private fun copyOf(root: Path): Path {
-        val checkedOut = session.checkout("alice", module(root), session.newDirectory("${name(root)}-copy-wc"))
-        val copy = checkedOut.resolveSibling("${name(root)}-copy")
-        Files.move(checkedOut, copy)
+        val copy = session.newDirectory("${name(root)}-copy-wc").resolve("${name(root)}-copy")
+        Files.walk(root).use { paths ->
+            paths.forEach { source -> Files.copy(source, copy.resolve(root.relativize(source).toString())) }
+        }
         return copy
     }
 

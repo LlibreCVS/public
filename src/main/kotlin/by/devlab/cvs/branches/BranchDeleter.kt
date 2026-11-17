@@ -26,15 +26,19 @@ class BranchDeleter(private val project: Project, private val prompts: BranchPro
         val lists = BranchListService.getInstance(project)
         val projectRoots = (BranchStateService.getInstance(project).roots().map { it.path } + roots).distinctBy(::normalized)
         val protecting = projectRoots.mapNotNull { root -> protection(root, branch)?.let { root to it } }
+        val alike = roots.groupBy(BranchSwitcher::rootName).filterValues { it.size > 1 }.keys
         return roots.map { root ->
-            val name = BranchSwitcher.rootName(root)
+            // Two checkouts named alike stay apart in the question and the report: `<parent>/<name>`.
+            val name = BranchSwitcher.rootName(root).let { if (it in alike) "${root.parent?.fileName}/$it" else it }
             val skip = if (lists.list(root)?.branches?.contains(branch) != true) {
                 "lacks the branch $branch"
             } else {
                 protection(root, branch) ?: run {
                     val location = CvsTags.moduleLocation(root)
-                    protecting.firstOrNull { (other, _) -> normalized(other) != normalized(root) && overlap(location, CvsTags.moduleLocation(other)) }
-                        ?.let { (other, why) -> "shares its module with ${BranchSwitcher.rootName(other)}, which ${which(why)}" }
+                    // A protecting root whose module cannot be read protects every module (conservative).
+                    protecting.firstOrNull { (other, _) ->
+                        normalized(other) != normalized(root) && overlap(location, CvsTags.moduleLocation(other), unknownOverlaps = true)
+                    }?.let { (other, why) -> "shares its module with ${BranchSwitcher.rootName(other)}, which ${which(why)}" }
                 }
             }
             Step(root, name, skip)
@@ -91,19 +95,24 @@ class BranchDeleter(private val project: Project, private val prompts: BranchPro
             if (!prompts.confirmDeleteBranchIrreversible(project, branch, irreversibleWarning(branch))) return null
         }
         val notes = ArrayList<String>()
+        val done = ArrayList<Path>()
+        val failedRoots = steps.filter { step -> failed.any { it.first == step.name } }.mapTo(HashSet()) { normalized(it.root) }
         for ((step, analysis) in analysed) {
             // The branch tag first: when it fails, none of the root's tags is touched (decision 10).
             val error = guarded { CvsTags.deleteBranch(project, step.root, branch) }
             if (error != null) {
                 failed += step.name to error
+                failedRoots.add(normalized(step.root))
                 continue
             }
             for (tag in analysis.tags) {
                 guarded { CvsTags.deleteTag(project, step.root, tag) }?.let { notes += "${step.name}: cannot delete $tag: $it" }
             }
-            forgetBranch(step.root, branch)
+            done.add(step.root)
             deleted += step.name
         }
+        // The lists change once every root is done, so that a failed root keeps the branch in its list (decision 11).
+        done.forEach { forgetBranch(it, branch, failedRoots) }
         val report = BranchReport(
             "Delete branch $branch", deleted, skipped, emptyList(), failed, switchedLabel = "Deleted", notes = notes,
         )
@@ -124,13 +133,17 @@ class BranchDeleter(private val project: Project, private val prompts: BranchPro
         BranchOperations.getInstance(project).queue("Deleting CVS branch $branch") { delete(branch, roots) }
     }
 
-    /** Removes [branch] from the list of [root] and of every project root sharing its module (decision 15). */
-    private fun forgetBranch(root: Path, branch: String) {
+    /**
+     * Removes [branch] from the list of [root] and of every project root sharing its module (decision 15), except the
+     * roots in [failed].
+     */
+    private fun forgetBranch(root: Path, branch: String, failed: Set<Path>) {
         val lists = BranchListService.getInstance(project)
         val location = CvsTags.moduleLocation(root)
         lists.remove(root, branch)
         for (other in BranchStateService.getInstance(project).roots().map { it.path }) {
-            if (normalized(other) != normalized(root) && overlap(location, CvsTags.moduleLocation(other))) lists.remove(other, branch)
+            if (normalized(other) == normalized(root) || normalized(other) in failed) continue
+            if (overlap(location, CvsTags.moduleLocation(other))) lists.remove(other, branch)
         }
     }
 
@@ -145,7 +158,7 @@ class BranchDeleter(private val project: Project, private val prompts: BranchPro
         }
     }
 
-    private companion object {
+    internal companion object {
         /** Revision numbers compared component by component. */
         val REVISION_ORDER: Comparator<String> = Comparator { a, b ->
             val x = a.split('.').map { it.toIntOrNull() ?: 0 }
@@ -168,24 +181,27 @@ class BranchDeleter(private val project: Project, private val prompts: BranchPro
             return revisions.filter { it.startsWith("$branchPrefix.") && it.count { c -> c == '.' } == depth }
         }
 
-        fun irreversibleWarning(branch: String): String =
+        private fun irreversibleWarning(branch: String): String =
             "Deleting branch $branch cannot be undone. The branch name and its merge-point tags leave the repository " +
                 "for the whole team; the branch's revisions stay without a name.\n\n" +
                 "Working copies on $branch, also your teammates', stop updating and committing on it."
 
         /** A protection reason as the end of "which …": `is on X`, `has files …`, `has an unfinished merge …`. */
-        fun which(reason: String): String = when {
+        private fun which(reason: String): String = when {
             reason.startsWith("on ") -> "is $reason"
             reason.startsWith("unfinished") -> "has an $reason"
             else -> reason
         }
 
-        /** Whether two module locations are equal or one contains the other. */
-        fun overlap(a: String?, b: String?): Boolean {
-            if (a == null || b == null) return false
+        /**
+         * Whether two module locations ([CvsTags.locationKey]) are equal or one contains the other; an unknown location
+         * overlaps everything when [unknownOverlaps], nothing otherwise.
+         */
+        fun overlap(a: String?, b: String?, unknownOverlaps: Boolean = false): Boolean {
+            if (a == null || b == null) return unknownOverlaps
             return a == b || a.startsWith("$b/") || b.startsWith("$a/")
         }
 
-        fun normalized(path: Path): Path = path.toAbsolutePath().normalize()
+        private fun normalized(path: Path): Path = path.toAbsolutePath().normalize()
     }
 }
