@@ -52,13 +52,27 @@ class MergeTrackingTest {
     fun mergePointMovesAfterTheCommit() {
         val (a, _) = roots("moves", listOf("BR_FIX"))
         mergeBoth(a)
+        val snapshot = snapshot(a, ONE, TWO)
 
         ideCommit(a.resolve(ONE), a.resolve(TWO))
 
         for (file in listOf(ONE, TWO)) {
-            assertEquals(tag(a, file, "BR_FIX_MERGING_TRUNK"), tag(a, file, "BR_FIX_MERGED_TRUNK"), "MERGED of $file")
+            assertEquals(snapshot[file], tag(a, file, "BR_FIX_MERGED_TRUNK"), "MERGED of $file")
         }
         assertNull(service().unfinished(a))
+    }
+
+    @Test
+    @DisplayName("Snapshot deleted after the commit")
+    fun snapshotDeletedAfterTheCommit() {
+        val (a, _) = roots("deleted", listOf("BR_FIX"))
+        mergeBoth(a)
+        assertTrue(carriesSnapshot(a), "the merge sets the snapshot")
+
+        ideCommit(a.resolve(ONE), a.resolve(TWO))
+
+        assertTrue(tag(a, ONE, "BR_FIX_MERGED_TRUNK") != null, "MERGED is moved first")
+        assertFalse(carriesSnapshot(a), "BR_FIX_MERGING_TRUNK is deleted")
     }
 
     @Test
@@ -129,8 +143,9 @@ class MergeTrackingTest {
         val (a, _) = roots("repeated", listOf("BR_FIX"))
         val bob = commit(a, "BR_FIX", ONE, "one\nfirst fix\n")
         merger().merge(SwitchTarget.Branch("BR_FIX"), listOf(a))
+        val snapshot = snapshot(a, ONE)
         ideCommit(a.resolve(ONE))
-        assertEquals(tag(a, ONE, "BR_FIX_MERGING_TRUNK"), tag(a, ONE, "BR_FIX_MERGED_TRUNK"))
+        assertEquals(snapshot[ONE], tag(a, ONE, "BR_FIX_MERGED_TRUNK"))
         commit(a, "BR_FIX", TWO, "two\nsecond fix\n", bob)
 
         val report = merger().merge(SwitchTarget.Branch("BR_FIX"), listOf(a))
@@ -182,15 +197,29 @@ class MergeTrackingTest {
     fun completeMergeMovesTheMergePoint() {
         val (a, _) = roots("complete", listOf("BR_FIX"))
         mergeBoth(a)
+        val snapshot = snapshot(a, ONE, TWO)
 
         val (report, notification) = BranchFixtures.notified(project.get()) { service().complete(a) }
 
         println("${notification.title}\n${notification.content}")
         for (file in listOf(ONE, TWO)) {
-            assertEquals(tag(a, file, "BR_FIX_MERGING_TRUNK"), tag(a, file, "BR_FIX_MERGED_TRUNK"), "MERGED of $file")
+            assertEquals(snapshot[file], tag(a, file, "BR_FIX_MERGED_TRUNK"), "MERGED of $file")
         }
         assertNull(service().unfinished(a))
         assertEquals(listOf(module(a)), report!!.switched)
+    }
+
+    @Test
+    @DisplayName("Snapshot deleted by Complete Merge")
+    fun snapshotDeletedByCompleteMerge() {
+        val (a, _) = roots("complete-deleted", listOf("BR_FIX"))
+        mergeBoth(a)
+        assertTrue(carriesSnapshot(a), "the merge sets the snapshot")
+
+        service().complete(a)
+
+        assertNull(service().unfinished(a))
+        assertFalse(carriesSnapshot(a), "BR_FIX_MERGING_TRUNK is deleted")
     }
 
     @Test
@@ -221,11 +250,12 @@ class MergeTrackingTest {
         merger().merge(SwitchTarget.Branch("BR_FIX"), listOf(a))
         assertEquals("three\n", text(a, THREE))
         assertEquals(setOf(ONE, THREE), service().unfinished(a)!!.files.keys)
+        val snapshot = snapshot(a, ONE, THREE)
 
         ideCommit(a.resolve(ONE), a.resolve(THREE))
 
-        assertEquals(tag(a, ONE, "BR_FIX_MERGING_TRUNK"), tag(a, ONE, "BR_FIX_MERGED_TRUNK"))
-        assertEquals(tag(a, THREE, "BR_FIX_MERGING_TRUNK"), tag(a, THREE, "BR_FIX_MERGED_TRUNK"))
+        assertEquals(snapshot[ONE], tag(a, ONE, "BR_FIX_MERGED_TRUNK"))
+        assertEquals(snapshot[THREE], tag(a, THREE, "BR_FIX_MERGED_TRUNK"))
         assertNull(service().unfinished(a))
     }
 
@@ -337,6 +367,14 @@ class MergeTrackingTest {
     }
 
     private fun tag(root: Path, file: String, tag: String): String? = session.tagOf("${module(root)}/$file", tag)
+
+    /** The revisions `BR_FIX_MERGING_TRUNK` marks on [files] of [root] now; read before a merge ends, which deletes it. */
+    private fun snapshot(root: Path, vararg files: String): Map<String, String> =
+        files.associateWith { file -> checkNotNull(tag(root, file, "BR_FIX_MERGING_TRUNK")) { "the snapshot marks $file" } }
+
+    /** Whether any file of [root]'s module carries `BR_FIX_MERGING_TRUNK`, from the fixture's own `cvs rlog -h`. */
+    private fun carriesSnapshot(root: Path): Boolean =
+        session.server.cvs("rlog", "-h", module(root)).lines().any { it.trim().startsWith("BR_FIX_MERGING_TRUNK:") }
 
     private fun module(root: Path): String = root.fileName.toString()
 
