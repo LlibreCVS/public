@@ -6,8 +6,9 @@ import java.nio.file.Path
 
 /**
  * Deletes a branch and its merge-point tags from the roots' modules (cvs-branch-delete decisions 3-15): plans each root
- * locally (deleted, or skipped with the reason), deletes the branch tag with `rtag -d -B` on each remaining root's
- * module, removes the branch from the remembered lists and reports in one notification. A failure in one root does not
+ * locally (deleted, or skipped with the reason), reads the branch in each remaining root's module, asks twice, then
+ * deletes the branch tag with `rtag -d -B` and its merge-point tags with `rtag -d` on each module, removes the branch
+ * from the remembered lists and reports in one notification. A failure in one root does not
  * stop the others; nothing is rolled back.
  */
 class BranchDeleter(private val project: Project, private val prompts: BranchPrompts = BranchPrompts.UI) {
@@ -89,24 +90,33 @@ class BranchDeleter(private val project: Project, private val prompts: BranchPro
             if (!prompts.confirmDeleteBranch(project, branch, summary)) return null
             if (!prompts.confirmDeleteBranchIrreversible(project, branch, irreversibleWarning(branch))) return null
         }
-        for (step in analysed.keys) {
-            val error = try {
-                CvsTags.deleteBranch(project, step.root, branch)
-            } catch (e: Exception) {
-                // A cancel or another control-flow exception ends the operation; it is not a root's failure.
-                if (e is ControlFlowException) throw e
-                e.message ?: e.toString()
-            }
+        val notes = ArrayList<String>()
+        for ((step, analysis) in analysed) {
+            // The branch tag first: when it fails, none of the root's tags is touched (decision 10).
+            val error = guarded { CvsTags.deleteBranch(project, step.root, branch) }
             if (error != null) {
                 failed += step.name to error
                 continue
             }
+            for (tag in analysis.tags) {
+                guarded { CvsTags.deleteTag(project, step.root, tag) }?.let { notes += "${step.name}: cannot delete $tag: $it" }
+            }
             forgetBranch(step.root, branch)
             deleted += step.name
         }
-        val report = BranchReport("Delete branch $branch", deleted, skipped, emptyList(), failed, switchedLabel = "Deleted")
+        val report = BranchReport(
+            "Delete branch $branch", deleted, skipped, emptyList(), failed, switchedLabel = "Deleted", notes = notes,
+        )
         CvsRunner.notify(project, report)
         return report
+    }
+
+    /** Runs [rtag] and returns its error, or the message of what it threw; control-flow exceptions end the operation. */
+    private fun guarded(rtag: () -> String?): String? = try {
+        rtag()
+    } catch (e: Exception) {
+        if (e is ControlFlowException) throw e
+        e.message ?: e.toString()
     }
 
     /** Deletes [branch] in a background task as the project's branch operation (decision 9). */
