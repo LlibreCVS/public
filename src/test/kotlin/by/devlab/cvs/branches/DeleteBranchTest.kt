@@ -413,6 +413,28 @@ class DeleteBranchTest {
         assertFalse("BR_FIX" in lists().list(b)!!.branches)
     }
 
+    // cvs-branch-popup: Delete Branch… is one of the branch operations that run one at a time.
+    @Test
+    @DisplayName("Delete Branch refused during an operation")
+    fun deleteBranchRefusedDuringAnOperation() {
+        val (a, b) = roots("busy", listOf("BR_FIX"))
+        val operations = BranchOperations.getInstance(project.get())
+        assertTrue(operations.tryStart())
+        try {
+            val (_, notification) = BranchFixtures.notified(project.get()) { deleter().start("BR_FIX", listOf(a, b)) }
+
+            println("${notification.title}\n${notification.content}")
+            assertTrue("already running" in notification.content, notification.content)
+        } finally {
+            operations.finish()
+        }
+        assertEquals(emptyList<String>(), prompts.asked)
+        for (root in listOf(a, b)) {
+            assertNotNull(tag(root, ONE, "BR_FIX"), "BR_FIX of ${name(root)}")
+            assertTrue("BR_FIX" in lists().list(root)!!.branches)
+        }
+    }
+
     private fun lists() = BranchListService.getInstance(project.get())
 
     private fun text(root: Path, file: String): String = TestData.text(root.resolve(file), Charsets.UTF_8)

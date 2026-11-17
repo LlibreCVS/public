@@ -43,6 +43,7 @@ class BranchPopupTest {
         const val MERGE_TRUNK = "Merge Trunk into Current"
         const val SWITCH = "Switch"
         const val MERGE_INTO_CURRENT = "Merge into Current"
+        const val DELETE_BRANCH = "Delete Branch…"
     }
 
     private val temp = tempPathFixture()
@@ -111,9 +112,12 @@ class BranchPopupTest {
         println(model.render())
 
         val branch = branches(model.entries).single { it.text == "BR_RELEASE" }
-        assertEquals(listOf(SWITCH, MERGE_INTO_CURRENT), items(branch.entries).map { it.text })
+        assertEquals(listOf(SWITCH, MERGE_INTO_CURRENT, DELETE_BRANCH), items(branch.entries).map { it.text })
         assertEquals(BranchChoice.Switch("BR_RELEASE", listOf(a, b)), switchOf(model.entries, "BR_RELEASE").choice)
         assertEquals(BranchChoice.Merge(SwitchTarget.Branch("BR_RELEASE"), listOf(a, b)), mergeOf(model.entries, "BR_RELEASE").choice)
+        assertEquals(BranchChoice.DeleteBranch("BR_RELEASE", listOf(a, b)), deleteOf(model.entries, "BR_RELEASE").choice)
+        // In a root's submenu, Delete Branch… acts on that root only (cvs-branch-delete decision 7).
+        assertEquals(BranchChoice.DeleteBranch("BR_RELEASE", listOf(b)), deleteOf(roots(model.entries)[1].entries, "BR_RELEASE").choice)
     }
 
     @Test
@@ -146,7 +150,12 @@ class BranchPopupTest {
         val current = branches(marked.entries).single { it.text == "BR_RELEASE" }
         assertTrue(current.current, marked.render())
         assertNull(switchOf(marked.entries, "BR_RELEASE").choice, "Switch of the current branch must switch nothing")
-        assertEquals(listOf(SWITCH), items(current.entries).map { it.text }, "the current branch offers no Merge into Current")
+        assertEquals(listOf(SWITCH), items(current.entries).map { it.text }, "the current branch offers no Merge into Current and no Delete Branch…")
+        assertEquals(
+            BranchChoice.DeleteBranch("BR_FIX", listOf(a)),
+            deleteOf(roots(marked.entries)[0].entries, "BR_FIX").choice,
+            "a branch the root is not on can be deleted",
+        )
         assertEquals(listOf("module-a: BR_RELEASE", "module-b: BR_RELEASE"), roots(marked.entries).map { it.text })
         assertFalse(branches(roots(marked.entries)[0].entries).single { it.text == "BR_FIX" }.current)
 
@@ -238,6 +247,7 @@ class BranchPopupTest {
             }
             assertTrue(actions.count { it.text == NEW_BRANCH } == 3, model.render())
             assertTrue(actions.count { it.text == MERGE_INTO_CURRENT } >= 3, "merge entries are listed (disabled): ${model.render()}")
+            assertTrue(actions.count { it.text == DELETE_BRANCH } >= 3, "delete entries are listed (disabled): ${model.render()}")
         } finally {
             operations.finish()
         }
@@ -245,6 +255,7 @@ class BranchPopupTest {
         assertFalse(after.render().contains(BranchOperations.IN_PROGRESS), after.render())
         assertTrue(switchOf(after.entries, "BR_RELEASE").enabled)
         assertTrue(mergeOf(after.entries, "BR_RELEASE").enabled)
+        assertTrue(deleteOf(after.entries, "BR_RELEASE").enabled)
     }
 
     @Test
@@ -341,6 +352,9 @@ class BranchPopupTest {
 
     private fun mergeOf(entries: List<BranchPopupModel.Entry>, branch: String): Item =
         item(branches(entries).single { it.text == branch }.entries, MERGE_INTO_CURRENT)
+
+    private fun deleteOf(entries: List<BranchPopupModel.Entry>, branch: String): Item =
+        item(branches(entries).single { it.text == branch }.entries, DELETE_BRANCH)
 
     /** Every item, also inside submenus. */
     private fun allItems(entries: List<BranchPopupModel.Entry>): List<Item> =
