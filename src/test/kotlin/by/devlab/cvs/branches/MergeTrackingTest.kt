@@ -103,6 +103,21 @@ class MergeTrackingTest {
         assertNull(tag(a, TWO, "BR_FIX_MERGED_TRUNK"))
     }
 
+    @Test
+    @DisplayName("Snapshot deleted when the merge is rolled back")
+    fun snapshotDeletedWhenTheMergeIsRolledBack() {
+        val (a, _) = roots("rollback-deleted", listOf("BR_FIX"))
+        mergeBoth(a)
+        assertTrue(carriesSnapshot(a), "the merge sets the snapshot")
+
+        rollBack(a, ONE, TWO)
+        service().refresh()
+        awaitIdle()
+
+        assertNull(service().unfinished(a))
+        assertFalse(carriesSnapshot(a), "BR_FIX_MERGING_TRUNK is deleted")
+    }
+
     // Review focus: a rollback followed by a teammate's commit and an update must not look like a commit.
     @Test
     @DisplayName("Rollback and a newer revision do not move the merge point")
@@ -236,6 +251,54 @@ class MergeTrackingTest {
         assertNull(service().unfinished(a))
         assertEquals(listOf(module(a)), report!!.switched)
         assertEquals("one\nfix\n", text(a, ONE), "Forget Merge leaves the files as they are")
+    }
+
+    @Test
+    @DisplayName("Snapshot deleted by Forget Merge")
+    fun snapshotDeletedByForgetMerge() {
+        val (a, _) = roots("forget-deleted", listOf("BR_FIX"))
+        mergeBoth(a)
+        assertTrue(carriesSnapshot(a), "the merge sets the snapshot")
+
+        service().forget(a)
+
+        assertNull(service().unfinished(a))
+        assertFalse(carriesSnapshot(a), "BR_FIX_MERGING_TRUNK is deleted")
+    }
+
+    @Test
+    @DisplayName("Snapshot of another merge is kept")
+    fun snapshotOfAnotherMergeIsKept() {
+        val (a, _) = roots("forget-moved", listOf("BR_FIX"))
+        val bob = commit(a, "BR_FIX", ONE, "one\nfirst fix\n")
+        merger().merge(SwitchTarget.Branch("BR_FIX"), listOf(a))
+        commit(a, "BR_FIX", TWO, "two\nbob's next fix\n", bob)
+        session.server.cvs("rtag", "-F", "-r", "BR_FIX", "BR_FIX_MERGING_TRUNK", module(a))
+        val moved = snapshot(a, ONE, TWO)
+
+        val (_, notification) = BranchFixtures.notified(project.get()) { service().forget(a) }
+
+        val text = "${notification.title}\n${notification.content}"
+        println(text)
+        assertEquals(moved, snapshot(a, ONE, TWO), "the other merge's snapshot is untouched")
+        assertNull(service().unfinished(a))
+        assertTrue(text.contains("was not deleted") && text.contains("moved by another merge"), text)
+    }
+
+    @Test
+    @DisplayName("Forget Merge with the server unreachable")
+    fun forgetMergeWithTheServerUnreachable() {
+        val (a, _) = roots("forget-offline", listOf("BR_FIX"))
+        mergeBoth(a)
+        BranchFixtures.unreachable(a)
+
+        val (_, notification) = BranchFixtures.notified(project.get()) { service().forget(a) }
+
+        val text = "${notification.title}\n${notification.content}"
+        println(text)
+        assertNull(service().unfinished(a))
+        assertTrue(text.contains("BR_FIX_MERGING_TRUNK was not deleted"), text)
+        assertTrue(carriesSnapshot(a), "nothing was deleted")
     }
 
     // Code review: a merge that brings a new directory must still move its merge point.
