@@ -178,8 +178,24 @@ class MergeService(private val project: Project) : PersistentStateComponent<Merg
         }
         stuck.remove(key(root))
         drop(root)
-        return BranchReport(title, listOf(name), emptyList(), emptyList(), emptyList(), switchedLabel = "Merge point ${merge.mergedTag} moved")
+        // The snapshot was checked above: it is this merge's and is needed no more (merge-drop-merging-tag).
+        val notes = listOfNotNull(snapshotNotDeleted(merge, deleteTag(root, merge.mergingTag)))
+        return BranchReport(
+            title, listOf(name), emptyList(), emptyList(), emptyList(), switchedLabel = "Merge point ${merge.mergedTag} moved", notes = notes,
+        )
     }
+
+    /** `rtag -d [tag]` of [root]'s module: the CVS error, or null. */
+    private fun deleteTag(root: Path, tag: String): String? = try {
+        CvsTags.delete(project, root, tag)
+    } catch (e: Exception) {
+        if (e is ControlFlowException) throw e
+        e.message ?: e.toString()
+    }
+
+    /** The report note for a snapshot left in the repository for [reason], or null without one. */
+    private fun snapshotNotDeleted(merge: UnfinishedMerge, reason: String?): String? =
+        reason?.let { "Snapshot ${merge.mergingTag} was not deleted: $it" }
 
     /**
      * Whether [file], recorded at [revision] after the merge, is back at it (an added file: no longer listed). A missing

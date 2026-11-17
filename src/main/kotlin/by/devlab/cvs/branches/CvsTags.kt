@@ -27,9 +27,9 @@ import java.io.File
 import java.nio.file.Path
 
 /**
- * The repository side of a merge point (cvs-branch-merge decisions 3, 11, 14): moving the plugin's own tags with
- * `rtag -F -r` on a root's module, and reading which revision of each file of a root carries a tag with a header-only
- * `log`. OpenCVS's `RtagCommand` has no `-r`, so the command is the plugin's own.
+ * The repository side of a merge point (cvs-branch-merge decisions 3, 11, 14): moving and deleting the plugin's own
+ * tags with `rtag -F -r` and `rtag -d` on a root's module, and reading which revision of each file of a root carries a
+ * tag with a header-only `log`. OpenCVS's `RtagCommand` has no `-r`, so the command is the plugin's own.
  */
 internal object CvsTags {
 
@@ -38,14 +38,24 @@ internal object CvsTags {
      * with `rtag -F -r`, moving it from where it was; without `-B`, so a branch tag is never moved. Returns the CVS
      * error, or null when it succeeded.
      */
-    fun move(project: Project, root: Path, revision: String, tag: String): String? {
+    fun move(project: Project, root: Path, revision: String, tag: String): String? =
+        rtag(project, root, "Move merge point", listOf("-F", "-r", revision, tag))
+
+    /**
+     * Deletes [tag] from every file of the module of the working copy [root] with `rtag -d`; a branch tag is never
+     * deleted (no `-B`). Returns the CVS error, or null when it succeeded.
+     */
+    fun delete(project: Project, root: Path, tag: String): String? = rtag(project, root, "Delete merge snapshot", listOf("-d", tag))
+
+    /** `rtag [arguments] <module>` of [root]'s module; the CVS error, or null. */
+    private fun rtag(project: Project, root: Path, title: String, arguments: List<String>): String? {
         val dir = directory(root) ?: return "cannot find $root"
         val settings = CvsEntriesManager.getInstance().getCvsConnectionSettingsFor(dir)
         val module = CvsEntriesManager.getInstance().getRepositoryFor(dir)?.trim()?.takeIf { it.isNotEmpty() }
             ?: return "$root has no CVS/Repository"
-        val operation = RtagRevisionOperation(settings, modulePath(settings, module), revision, tag)
+        val operation = RtagOperation(settings, modulePath(settings, module), arguments)
         val messages = ArrayList<String>()
-        val error = CvsRunner.run(project, CommandCvsHandler("Move merge point", operation, false)) { messages += it }
+        val error = CvsRunner.run(project, CommandCvsHandler(title, operation, false)) { messages += it }
         return error
             ?: messages.firstOrNull { CANNOT_FIND.matches(it.trim()) || "NOT MOVING" in it || "Not moving" in it }
             ?: if (!operation.executed) "rtag did not run: CVS root ${settings.cvsRootAsString} is offline or the login failed" else null
@@ -76,26 +86,24 @@ internal object CvsTags {
     /** "cvs rtag: cannot find module `module' - ignored". */
     private val CANNOT_FIND = Regex("""\S+ [^:]+: cannot find module `.+' - ignored""")
 
-    /** `rtag -F -r <revision> <tag> <module>` on a repository path, without a working copy. */
-    private class RtagRevisionOperation(
+    /** `rtag [arguments] <module>` on a repository path, without a working copy. */
+    private class RtagOperation(
         settings: CvsConnectionSettings,
         private val module: String,
-        private val revision: String,
-        private val tag: String,
+        private val arguments: List<String>,
     ) : LocalPathIndifferentOperation(settings) {
         @Volatile
         var executed = false
 
         override fun createCommand(root: CvsRootProvider, environment: CvsExecutionEnvironment): Command {
             executed = true
-            return RtagRevisionCommand(module, revision, tag)
+            return PlainRtagCommand(module, arguments)
         }
 
         override fun getOperationName(): String = "rtag"
     }
 
-    private class RtagRevisionCommand(private val module: String, private val revision: String, private val tag: String) :
-        AbstractCommand() {
+    private class PlainRtagCommand(private val module: String, private val arguments: List<String>) : AbstractCommand() {
         override fun execute(
             requestProcessor: IRequestProcessor,
             eventSender: IEventSender,
@@ -104,15 +112,12 @@ internal object CvsTags {
             progressViewer: IProgressViewer,
         ): Boolean {
             val requests = Requests(CommandRequest.RTAG, clientEnvironment)
-            requests.addArgumentRequest("-F")
-            requests.addArgumentRequest("-r")
-            requests.addArgumentRequest(revision)
-            requests.addArgumentRequest(tag)
+            arguments.forEach(requests::addArgumentRequest)
             requests.addArgumentRequest(module)
             return requestProcessor.processRequests(requests, DummyRequestsProgressHandler())
         }
 
-        override fun getCvsCommandLine(): String = "rtag -F -r $revision $tag $module"
+        override fun getCvsCommandLine(): String = "rtag ${arguments.joinToString(" ")} $module"
     }
 
     /** OpenCVS's header-only log of a root, keeping the revisions of [tags] per file below the root. */
