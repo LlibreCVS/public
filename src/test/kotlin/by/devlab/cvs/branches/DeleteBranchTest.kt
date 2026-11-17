@@ -8,6 +8,7 @@ import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -32,6 +33,8 @@ class DeleteBranchTest {
         const val ONE = "one.txt"
         const val TWO = "dir/two.txt"
         const val THREE = "newdir/three.txt"
+        const val CYR_ONE = "один.txt"
+        const val CYR_TWO = "Папка/два.txt"
     }
 
     private val project = projectFixture(tempPathFixture(), openAfterCreation = true)
@@ -214,6 +217,185 @@ class DeleteBranchTest {
         )
     }
 
+    // 2.3 Deleting the branch and its merge-point tags
+
+    @Test
+    @DisplayName("Branch deleted in all roots")
+    fun branchDeletedInAllRoots() {
+        val (a, b) = roots("all", listOf("BR_FIX"))
+
+        val report = deleter().delete("BR_FIX", listOf(a, b))
+
+        println(report?.text())
+        for (root in listOf(a, b)) {
+            for (file in listOf(ONE, TWO)) assertNull(tag(root, file, "BR_FIX"), "BR_FIX of ${name(root)}/$file")
+            assertFalse("BR_FIX" in lists().list(root)!!.branches, "list of ${name(root)}")
+            assertEquals(BranchState.TRUNK, BranchState.read(root))
+            assertEquals("one\n", text(root, ONE))
+            assertEquals("two\n", text(root, TWO))
+            for (file in session.workingFiles(root)) assertEquals("", session.stickyTag(file), "sticky tag of $file")
+        }
+        assertEquals(listOf(name(a), name(b)), report!!.switched)
+    }
+
+    @Test
+    @DisplayName("Branch deleted in one root")
+    fun branchDeletedInOneRoot() {
+        val (a, b) = roots("one", listOf("BR_FIX"))
+
+        deleter().delete("BR_FIX", listOf(a))
+
+        assertNull(tag(a, ONE, "BR_FIX"))
+        assertNotNull(tag(b, ONE, "BR_FIX"))
+        assertTrue("BR_FIX" in lists().list(b)!!.branches)
+    }
+
+    @Test
+    @DisplayName("Branch deleted from a file removed on the trunk")
+    fun branchDeletedFromAFileRemovedOnTheTrunk() {
+        val (a, _) = roots("gone", emptyList())
+        addOnTrunk(a, "gone.txt")
+        session.branch(module(a), "BR_FIX")
+        lists().set(a, listOf("BR_FIX"), System.currentTimeMillis())
+        session.removeAndCommit(project.get(), a.resolve("gone.txt"), "alice removes gone.txt on the trunk")
+        assertNotNull(tag(a, "gone.txt", "BR_FIX"))
+
+        deleter().delete("BR_FIX", listOf(a))
+
+        assertNull(tag(a, "gone.txt", "BR_FIX"))
+        assertNull(tag(a, ONE, "BR_FIX"))
+    }
+
+    @Test
+    @DisplayName("Branch already gone from the server")
+    fun branchAlreadyGoneFromTheServer() {
+        val (a, _) = roots("stale", listOf("BR_FIX"))
+        session.server.cvs("rtag", "-d", "-B", "BR_FIX", module(a))
+
+        val report = deleter().delete("BR_FIX", listOf(a))
+
+        println(report?.text())
+        assertEquals(listOf(name(a)), report!!.switched)
+        assertEquals(emptyList<Pair<String, String>>(), report.failed)
+        assertFalse("BR_FIX" in lists().list(a)!!.branches)
+    }
+
+    @Test
+    @DisplayName("Merge-point tags deleted")
+    fun mergePointTagsDeleted() {
+        val (a, _) = roots("tags", listOf("BR_FIX"))
+        commit(a, "BR_FIX", ONE, "one\nfix\n")
+        session.tag(module(a), "BR_FIX_MERGED_TRUNK", "BR_FIX")
+        session.tag(module(a), "TRUNK_MERGED_BR_FIX", "HEAD")
+        remap(a)
+
+        val report = deleter().delete("BR_FIX", listOf(a))
+
+        println(report?.text())
+        for (file in listOf(ONE, TWO)) {
+            assertNull(tag(a, file, "BR_FIX_MERGED_TRUNK"), "BR_FIX_MERGED_TRUNK of $file")
+            assertNull(tag(a, file, "TRUNK_MERGED_BR_FIX"), "TRUNK_MERGED_BR_FIX of $file")
+        }
+    }
+
+    @Test
+    @DisplayName("Other tags kept")
+    fun otherTagsKept() {
+        val (a, _) = roots("others", listOf("BR_FIX", "BR_RELEASE"))
+        session.tag(module(a), "BR_FIX_MERGED_TRUNK", "BR_FIX")
+        session.tag(module(a), "BR_RELEASE_MERGED_TRUNK", "BR_RELEASE")
+        session.tag(module(a), "RELEASE_1", "HEAD")
+        val before = listOf("BR_RELEASE_MERGED_TRUNK", "RELEASE_1", "BR_RELEASE").associateWith { tag(a, ONE, it) }
+
+        deleter().delete("BR_FIX", listOf(a))
+
+        assertNull(tag(a, ONE, "BR_FIX_MERGED_TRUNK"))
+        for ((name, revision) in before) {
+            assertNotNull(revision, name)
+            assertEquals(revision, tag(a, ONE, name), name)
+        }
+        assertTrue("BR_RELEASE" in lists().list(a)!!.branches)
+    }
+
+    @Test
+    @DisplayName("Report of a deletion")
+    fun reportOfADeletion() {
+        val (a, b) = roots("report", listOf("BR_FIX"))
+        session.updateWith(project.get(), a, CvsTestSession.UpdateOptions(branch = "BR_FIX"))
+        refreshed(project.get())
+
+        val (_, notification) = BranchFixtures.notified(project.get()) { deleter().delete("BR_FIX", listOf(a, b)) }
+
+        val text = "${notification.title}\n${notification.content}"
+        println(text)
+        assertEquals("Delete branch BR_FIX", notification.title)
+        assertTrue("Deleted: ${name(b)}" in notification.content, text)
+        assertTrue("Skipped: ${name(a)}: on BR_FIX" in notification.content, text)
+    }
+
+    @Test
+    @DisplayName("Roots sharing a module both lose the branch")
+    fun rootsSharingAModuleBothLoseTheBranch() {
+        val (a, b) = roots("both", listOf("BR_FIX"))
+        val copy = copyOf(a)
+        session.mapToCvs(project.get(), a, b, copy)
+        refreshed(project.get())
+        lists().set(copy, listOf("BR_FIX"), System.currentTimeMillis())
+
+        val report = deleter().delete("BR_FIX", listOf(a))
+
+        println(report?.text())
+        assertNull(tag(a, ONE, "BR_FIX"))
+        assertNull(tag(a, TWO, "BR_FIX"))
+        assertFalse("BR_FIX" in lists().list(a)!!.branches)
+        assertFalse("BR_FIX" in lists().list(copy)!!.branches)
+        assertTrue("BR_FIX" in lists().list(b)!!.branches)
+    }
+
+    // Review focus: deleting BR must leave BR_FIX and its merge points alone.
+    @Test
+    @DisplayName("Prefix branch keeps the longer branch's tags")
+    fun prefixBranchKeepsTheLongerBranchsTags() {
+        val (a, _) = roots("prefix", listOf("BR", "BR_FIX"))
+        session.tag(module(a), "BR_FIX_MERGED_TRUNK", "BR_FIX")
+        session.tag(module(a), "BR_MERGED_TRUNK", "BR")
+
+        deleter().delete("BR", listOf(a))
+
+        println(prompts.asked.joinToString("\n"))
+        assertNull(tag(a, ONE, "BR"))
+        assertNull(tag(a, ONE, "BR_MERGED_TRUNK"))
+        assertNotNull(tag(a, ONE, "BR_FIX"))
+        assertNotNull(tag(a, ONE, "BR_FIX_MERGED_TRUNK"))
+        assertEquals(listOf("BR_FIX"), lists().list(a)!!.branches)
+    }
+
+    // Review focus, decision 17: a module with Cyrillic paths, as in BranchCyrillicTest.
+    @Test
+    @DisplayName("Cyrillic branch deleted")
+    fun cyrillicBranchDeleted() {
+        val (a, b) = roots("cyr", listOf("BR_CYR"), mapOf(CYR_ONE to "один\n", CYR_TWO to "два\n"))
+        val bob = commit(a, "BR_CYR", CYR_TWO, "два\nправка на ветке\n")
+        session.server.cvs("rtag", "-r", "BR_CYR", "BR_CYR_MERGED_TRUNK", module(a))
+        commit(a, "BR_CYR", CYR_ONE, "один\nправка на ветке\n", bob)
+        remap(a, b)
+
+        val report = deleter().delete("BR_CYR", listOf(a))
+
+        println(prompts.asked.joinToString("\n"))
+        println(report?.text())
+        assertTrue(prompts.asked[0].startsWith("delete BR_CYR: unmerged {${name(a)}=1}, skipped [], failed [], tags [BR_CYR_MERGED_TRUNK]"), prompts.asked[0])
+        for (file in listOf(CYR_ONE, CYR_TWO)) {
+            assertNull(tag(a, file, "BR_CYR"), "BR_CYR of $file")
+            assertNull(tag(a, file, "BR_CYR_MERGED_TRUNK"), "BR_CYR_MERGED_TRUNK of $file")
+        }
+        assertEquals(listOf(name(a)), report!!.switched)
+    }
+
+    private fun lists() = BranchListService.getInstance(project.get())
+
+    private fun text(root: Path, file: String): String = TestData.text(root.resolve(file), Charsets.UTF_8)
+
     /** The repository state a committed plugin merge of `BR_FIX` into the trunk leaves on [root]'s module. */
     private fun mergedThroughPlugin(root: Path) {
         session.tag(module(root), "BR_FIX_MERGING_TRUNK", "BR_FIX")
@@ -259,14 +441,17 @@ class DeleteBranchTest {
         return copy
     }
 
-    /** Two modules `<prefix>-a` and `<prefix>-b` with [ONE] and [TWO], [branches] on both, checked out as alice. */
-    private fun roots(prefix: String, branches: List<String>): Pair<Path, Path> {
+    /** Two modules `<prefix>-a` and `<prefix>-b` with [files] ([ONE] and [TWO]), [branches] on both, checked out as alice. */
+    private fun roots(
+        prefix: String,
+        branches: List<String>,
+        files: Map<String, String> = mapOf(ONE to "one\n", TWO to "two\n"),
+    ): Pair<Path, Path> {
         session.useEncoding(Charsets.UTF_8)
         val parent = session.newDirectory("$prefix-wc")
         val roots = listOf("$prefix-a", "$prefix-b").map { module ->
             val seed = session.newDirectory("$module-seed")
-            TestData.write(seed.resolve(ONE), "one\n".toByteArray())
-            TestData.write(seed.resolve(TWO), "two\n".toByteArray())
+            files.forEach { (file, content) -> TestData.write(seed.resolve(file), content.toByteArray()) }
             session.importModule("alice", seed, module)
             branches.forEach { session.branch(module, it) }
             session.checkout("alice", module, parent)
