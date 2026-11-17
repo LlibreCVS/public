@@ -17,6 +17,7 @@ import org.netbeans.lib.cvsclient.IRequestProcessor
 import org.netbeans.lib.cvsclient.command.AbstractCommand
 import org.netbeans.lib.cvsclient.command.Command
 import org.netbeans.lib.cvsclient.command.log.LogInformation
+import org.netbeans.lib.cvsclient.command.log.LogMessageParser
 import org.netbeans.lib.cvsclient.event.ICvsListenerRegistry
 import org.netbeans.lib.cvsclient.event.IEventSender
 import org.netbeans.lib.cvsclient.progress.IProgressViewer
@@ -90,6 +91,32 @@ internal object CvsTags {
     }
 
     /**
+     * The `rlog -r<branch>` of the module of the working copy [root] (cvs-branch-delete decision 14): per RCS file of
+     * the whole module, Attic included, its symbolic names and the revisions on [branch]. Throws on a CVS error, or
+     * when the command did not run.
+     */
+    fun branchLog(project: Project, root: Path, branch: String): List<LogInformation> {
+        val dir = directory(root) ?: throw IllegalStateException("cannot find $root")
+        val settings = CvsEntriesManager.getInstance().getCvsConnectionSettingsFor(dir)
+        val module = CvsEntriesManager.getInstance().getRepositoryFor(dir)?.trim()?.takeIf { it.isNotEmpty() }
+            ?: throw IllegalStateException("$root has no CVS/Repository")
+        val path = modulePath(settings, module)
+        val operation = RlogOperation(settings, listOf("-r$branch", path))
+        val messages = ArrayList<String>()
+        val error = CvsRunner.run(
+            project, CommandCvsHandler("Read branch $branch", operation, true),
+            // A file without the branch is not an error: `cvs rlog: warning: no revision `BR' in `…,v'`.
+            ignored = { NO_REVISION in it },
+        ) { messages += it }
+        (error ?: messages.firstOrNull { CANNOT_FIND.matches(it.trim()) })?.let { throw IllegalStateException(it) }
+        if (!operation.executed) throw IllegalStateException("rlog did not run: CVS root ${settings.cvsRootAsString} is offline or the login failed")
+        return operation.files
+    }
+
+    /** cvs 1.11 on a file without the branch asked for. */
+    private val NO_REVISION = Regex("""warning: no revision `.*' in `""")
+
+    /**
      * Where the module of the working copy [root] lives: its CVS root without the user, then the module path
      * (`:pserver:host:port/cvsroot/module`), or null without `CVS/Repository`. Read from the working copy only.
      */
@@ -144,6 +171,49 @@ internal object CvsTags {
         }
 
         override fun getCvsCommandLine(): String = "rtag ${arguments.joinToString(" ")}"
+    }
+
+    /** `rlog <arguments>` on a repository path (the module is the last argument), collecting each file's log. */
+    private class RlogOperation(settings: CvsConnectionSettings, private val arguments: List<String>) :
+        LocalPathIndifferentOperation(settings) {
+        @Volatile
+        var executed = false
+
+        val files = ArrayList<LogInformation>()
+
+        override fun createCommand(root: CvsRootProvider, environment: CvsExecutionEnvironment): Command {
+            executed = true
+            return RlogCommand(arguments)
+        }
+
+        override fun fileInfoGenerated(info: Any?) {
+            super.fileInfoGenerated(info)
+            if (info is LogInformation) files += info
+        }
+
+        override fun getOperationName(): String = "rlog"
+    }
+
+    private class RlogCommand(private val arguments: List<String>) : AbstractCommand() {
+        override fun execute(
+            requestProcessor: IRequestProcessor,
+            eventSender: IEventSender,
+            listenerRegistry: ICvsListenerRegistry,
+            clientEnvironment: IClientEnvironment,
+            progressViewer: IProgressViewer,
+        ): Boolean {
+            val requests = Requests(CommandRequest.RLOG, clientEnvironment)
+            arguments.forEach { requests.addArgumentRequest(it) }
+            val parser = LogMessageParser(eventSender, clientEnvironment.cvsFileSystem)
+            parser.registerListeners(listenerRegistry)
+            try {
+                return requestProcessor.processRequests(requests, DummyRequestsProgressHandler())
+            } finally {
+                parser.unregisterListeners(listenerRegistry)
+            }
+        }
+
+        override fun getCvsCommandLine(): String = "rlog ${arguments.joinToString(" ")}"
     }
 
     /** OpenCVS's header-only log of a root, keeping the revisions of [tags] per file below the root. */

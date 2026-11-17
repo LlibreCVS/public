@@ -22,9 +22,14 @@ internal object CvsRunner {
 
     /**
      * Runs [handler] synchronously on the calling thread (never the UI thread) and returns the first CVS error, or null
-     * when it succeeded. Warnings (e.g. a merge conflict) are not errors.
+     * when it succeeded. Warnings (e.g. a merge conflict) and errors [ignored] accepts are not errors.
      */
-    fun run(project: Project, handler: CvsHandler, onMessage: (String) -> Unit = {}): String? {
+    fun run(
+        project: Project,
+        handler: CvsHandler,
+        ignored: (String) -> Boolean = { false },
+        onMessage: (String) -> Unit = {},
+    ): String? {
         handler.addCvsListener(object : CvsMessagesAdapter() {
             // cvs 1.11 sends its "NOT MOVING" warnings as ordinary (M) lines, not on the error stream.
             override fun addMessage(event: MessageEvent) {
@@ -40,7 +45,7 @@ internal object CvsRunner {
         } else {
             perform()
         }
-        val errors = executor.result.errors.filter { !it.isWarning }
+        val errors = executor.result.errors.filter { !it.isWarning && !ignored(it.message.orEmpty()) }
         if (errors.isEmpty()) return null
         return errors.joinToString("; ") { error -> error.message?.takeIf { it.isNotBlank() } ?: error.toString() }
     }
