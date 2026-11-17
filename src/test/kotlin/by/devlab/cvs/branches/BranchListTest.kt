@@ -84,6 +84,26 @@ class BranchListTest {
         assertNull(list.partial("BR_OLD"))
     }
 
+    // cvs-branch-delete decision 12: a deleted branch leaves the list without loading it again.
+    @Test
+    @DisplayName("Removed branch leaves the remembered list")
+    fun removedBranchLeavesTheRememberedList() {
+        val root = temp.get().resolve("module-a")
+        val service = BranchListService(project.get())
+        service.set(
+            root, listOf("BR_FIX", "BR_RELEASE"), 1_700_000_000_000L, files = 4,
+            coverage = mapOf("BR_FIX" to 2, "BR_RELEASE" to 4), missingDirs = mapOf("BR_FIX" to 1, "BR_RELEASE" to 0),
+        )
+
+        service.remove(root, "BR_FIX")
+
+        val list = checkNotNull(service.list(root))
+        assertEquals(listOf("BR_RELEASE"), list.branches)
+        assertEquals(mapOf("BR_RELEASE" to 4), list.coverage)
+        assertEquals(mapOf("BR_RELEASE" to 0), list.missingDirs)
+        assertEquals(1_700_000_000_000L, list.loadedAt)
+    }
+
     @Test
     @DisplayName("Refresh branch list")
     fun refreshBranchList() {
