@@ -89,6 +89,21 @@ internal object CvsTags {
         return tags.associateWith { operation.found[it].orEmpty() }
     }
 
+    /**
+     * Where the module of the working copy [root] lives: its CVS root without the user, then the module path
+     * (`:pserver:host:port/cvsroot/module`), or null without `CVS/Repository`. Read from the working copy only.
+     */
+    fun moduleLocation(root: Path): String? {
+        val dir = directory(root) ?: return null
+        val settings = CvsEntriesManager.getInstance().getCvsConnectionSettingsFor(dir)
+        val module = CvsEntriesManager.getInstance().getRepositoryFor(dir)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val cvsRoot = settings.cvsRootAsString.replace(USER, "$1").trimEnd('/')
+        return "$cvsRoot/${modulePath(settings, module).trim('/')}"
+    }
+
+    /** The user part of a CVS root (`:pserver:alice@`); group 1 is the method. */
+    private val USER = Regex("""^(:[^:]+:)[^@:/]*@""")
+
     /** [module] (a `CVS/Repository` line) as a path relative to the repository root. */
     private fun modulePath(settings: CvsConnectionSettings, module: String): String {
         val repository = settings.repository.orEmpty().replace('\\', '/').trimEnd('/')

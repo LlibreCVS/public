@@ -10,6 +10,8 @@ class TestPrompts(
     var confirmRecreate: Boolean = false,
     var partial: PartialBranchChoice = PartialBranchChoice.SWITCH,
     var confirmMerge: Boolean = true,
+    var confirmDelete: Boolean = true,
+    var confirmDeleteIrreversible: Boolean = true,
 ) : BranchPrompts {
 
     /** The questions asked, as text. */
@@ -55,5 +57,17 @@ class TestPrompts(
         asked += "recreate $branch: $warning"
         onAsk()
         return confirmRecreate
+    }
+
+    override fun confirmDeleteBranch(project: Project, branch: String, summary: DeleteBranchSummary): Boolean {
+        asked += "delete $branch: unmerged ${summary.unmerged}, skipped ${summary.skipped}, failed ${summary.failed}, tags ${summary.tags}"
+        onAsk()
+        return confirmDelete
+    }
+
+    override fun confirmDeleteBranchIrreversible(project: Project, branch: String, warning: String): Boolean {
+        asked += "delete $branch irreversibly: $warning"
+        onAsk()
+        return confirmDeleteIrreversible
     }
 }

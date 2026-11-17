@@ -46,6 +46,15 @@ interface BranchPrompts {
     /** The second confirmation of Recreate: [warning] names the roots and what happens to commits on [branch]. */
     fun confirmRecreate(project: Project, branch: String, warning: String): Boolean
 
+    /**
+     * The first question of Delete Branch… (cvs-branch-delete decision 8): the roots [summary] deletes [branch] in with
+     * their unmerged files, the skipped and failed roots and the merge-point tags deleted with it.
+     */
+    fun confirmDeleteBranch(project: Project, branch: String, summary: DeleteBranchSummary): Boolean
+
+    /** The second question of Delete Branch…: [warning] says the deletion cannot be undone (decision 8). */
+    fun confirmDeleteBranchIrreversible(project: Project, branch: String, warning: String): Boolean
+
     companion object {
         val UI: BranchPrompts = DialogPrompts
     }
@@ -57,7 +66,31 @@ enum class ExistingBranchChoice { USE, RECREATE, CANCEL }
 /** The answer to a branch that covers only part of some roots (design decision 20). */
 enum class PartialBranchChoice { SWITCH, SKIP, CANCEL }
 
-/** What New Branch… asks: the branch [name] (trimmed) and whether to [switch] the roots to it. */
+/**
+ * What the first question of Delete Branch… names (cvs-branch-delete decision 8): per root to delete in its number of
+ * [unmerged] files, the [skipped] and [failed] roots with the reason, and the merge-point [tags] to delete.
+ */
+data class DeleteBranchSummary(
+    val unmerged: Map<String, Int>,
+    val skipped: List<Pair<String, String>>,
+    val failed: List<Pair<String, String>>,
+    val tags: List<String>,
+) {
+    /** The question's text. */
+    fun text(branch: String): String = buildString {
+        append("Branch $branch will be deleted from the repository in:\n")
+        unmerged.forEach { (root, count) ->
+            append("$root: ")
+            append(if (count == 0) "every change merged" else "$count ${if (count == 1) "file holds" else "files hold"} changes never merged through the plugin")
+            append('\n')
+        }
+        if (skipped.isNotEmpty()) append("\nLeft as they are:\n").append(skipped.joinToString("\n") { (root, why) -> "$root: $why" }).append('\n')
+        if (failed.isNotEmpty()) append("\nCannot be read:\n").append(failed.joinToString("\n") { (root, why) -> "$root: $why" }).append('\n')
+        append(if (tags.isEmpty()) "\nNo merge-point tag is deleted." else "\nMerge-point tags deleted with it:\n${tags.joinToString("\n")}")
+    }
+}
+
+/** What New Branch… asks:the branch [name] (trimmed) and whether to [switch] the roots to it. */
 data class NewBranchRequest(val name: String, val switch: Boolean)
 
 /**
@@ -169,6 +202,18 @@ private object DialogPrompts : BranchPrompts {
     override fun confirmRecreate(project: Project, branch: String, warning: String): Boolean = onUiThread {
         Messages.showOkCancelDialog(
             project, warning, "Recreate Branch $branch", "Recreate", Messages.getCancelButton(), Messages.getWarningIcon(),
+        ) == Messages.OK
+    }
+
+    override fun confirmDeleteBranch(project: Project, branch: String, summary: DeleteBranchSummary): Boolean = onUiThread {
+        Messages.showOkCancelDialog(
+            project, summary.text(branch), "Delete Branch $branch", "Continue…", Messages.getCancelButton(), Messages.getWarningIcon(),
+        ) == Messages.OK
+    }
+
+    override fun confirmDeleteBranchIrreversible(project: Project, branch: String, warning: String): Boolean = onUiThread {
+        Messages.showOkCancelDialog(
+            project, warning, "Delete Branch $branch", "Delete", Messages.getCancelButton(), Messages.getWarningIcon(),
         ) == Messages.OK
     }
 
