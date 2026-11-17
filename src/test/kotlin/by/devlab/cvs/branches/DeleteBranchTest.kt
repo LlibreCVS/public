@@ -31,6 +31,7 @@ class DeleteBranchTest {
 
         const val ONE = "one.txt"
         const val TWO = "dir/two.txt"
+        const val THREE = "newdir/three.txt"
     }
 
     private val project = projectFixture(tempPathFixture(), openAfterCreation = true)
@@ -102,6 +103,143 @@ class DeleteBranchTest {
         assertEquals(emptyList<String>(), prompts.asked)
         assertNotNull(tag(a, ONE, "BR_FIX"))
         assertEquals(listOf(name(a) to "shares its module with ${name(copy)}, which is on BR_FIX"), report!!.skipped)
+    }
+
+    // 2.2 Analysis and the two questions
+
+    @Test
+    @DisplayName("Confirmation names unmerged files and tags")
+    fun confirmationNamesUnmergedFilesAndTags() {
+        val (a, b) = roots("confirm", listOf("BR_FIX"))
+        addOnTrunk(a, "outside.txt")
+        val bob = commit(a, "BR_FIX", ONE, "one\nfix\n")
+        commit(a, "BR_FIX", TWO, "two\nfix\n", bob)
+        mergedThroughPlugin(a)
+        commit(a, "BR_FIX", TWO, "two\nfix again\n", bob)
+        remap(a, b)
+
+        deleter().delete("BR_FIX", listOf(a))
+
+        println(prompts.asked.joinToString("\n"))
+        assertEquals(2, prompts.asked.size, "${prompts.asked}")
+        assertTrue(
+            prompts.asked[0].startsWith("delete BR_FIX: unmerged {${name(a)}=1}, skipped [], failed [], " +
+                "tags [BR_FIX_MERGED_TRUNK, BR_FIX_MERGING_TRUNK]"),
+            prompts.asked[0],
+        )
+        assertTrue("cannot be undone" in prompts.asked[1], prompts.asked[1])
+    }
+
+    @Test
+    @DisplayName("Fully merged branch has no unmerged files")
+    fun fullyMergedBranchHasNoUnmergedFiles() {
+        val (a, b) = roots("merged", listOf("BR_FIX"))
+        val bob = commit(a, "BR_FIX", ONE, "one\nfix\n")
+        commit(a, "BR_FIX", TWO, "two\nfix\n", bob)
+        mergedThroughPlugin(a)
+        remap(a, b)
+
+        deleter().delete("BR_FIX", listOf(a))
+
+        println(prompts.asked.joinToString("\n"))
+        assertTrue(prompts.asked[0].startsWith("delete BR_FIX: unmerged {${name(a)}=0}"), prompts.asked[0])
+    }
+
+    @Test
+    @DisplayName("Deletion cancelled")
+    fun deletionCancelled() {
+        val (a, b) = roots("cancel", listOf("BR_FIX"))
+        commit(a, "BR_FIX", ONE, "one\nfix\n")
+        mergedThroughPlugin(a)
+        remap(a, b)
+        val lists = BranchListService.getInstance(project.get())
+
+        for ((first, second) in listOf(false to true, true to false)) {
+            prompts.confirmDelete = first
+            prompts.confirmDeleteIrreversible = second
+            prompts.asked.clear()
+
+            val report = deleter().delete("BR_FIX", listOf(a, b))
+
+            println(prompts.asked.joinToString("\n"))
+            assertNull(report)
+            assertEquals(if (first) 2 else 1, prompts.asked.size, "${prompts.asked}")
+            for (root in listOf(a, b)) {
+                assertNotNull(tag(root, ONE, "BR_FIX"), "BR_FIX of ${name(root)}")
+                assertTrue("BR_FIX" in lists.list(root)!!.branches, "list of ${name(root)}")
+            }
+            assertNotNull(tag(a, ONE, "BR_FIX_MERGED_TRUNK"))
+            assertNotNull(tag(a, ONE, "BR_FIX_MERGING_TRUNK"))
+        }
+    }
+
+    // Review focus: a removal on the branch is a change.
+    @Test
+    @DisplayName("Dead branch head counts as unmerged")
+    fun deadBranchHeadCountsAsUnmerged() {
+        val (a, b) = roots("dead", listOf("BR_FIX"))
+        val bob = commit(a, "BR_FIX", ONE, "one\nfix\n")
+        mergedThroughPlugin(a)
+        session.removeAndCommit(project.get(), bob.resolve(ONE), "bob removes one.txt on BR_FIX")
+        remap(a, b)
+
+        deleter().delete("BR_FIX", listOf(a))
+
+        println(prompts.asked.joinToString("\n"))
+        assertTrue(prompts.asked[0].startsWith("delete BR_FIX: unmerged {${name(a)}=1}"), prompts.asked[0])
+    }
+
+    // Review focus, decision 14: a directory alice's trunk working copy does not have.
+    @Test
+    @DisplayName("Directory only on the branch is analysed")
+    fun directoryOnlyOnTheBranchIsAnalysed() {
+        val (a, b) = roots("branchdir", listOf("BR_FIX"))
+        val bob = session.checkout("bob", module(a), session.newDirectory("${name(a)}-bob"), tag = "BR_FIX")
+        session.mapToCvs(project.get(), bob)
+        TestData.write(bob.resolve(THREE), "three\n".toByteArray())
+        session.add(project.get(), bob.resolve("newdir"), bob.resolve(THREE))
+        session.commit(project.get(), listOf(bob.resolve(THREE)), "bob adds newdir/three.txt on BR_FIX")
+        // Only newdir carries the merge point: missing the directory would miss the tag.
+        session.server.cvs("rtag", "-r", "BR_FIX", "BR_FIX_MERGED_TRUNK", "${module(a)}/newdir")
+        commit(a, "BR_FIX", THREE, "three\nfix\n", bob)
+        remap(a, b)
+        assertTrue(Files.notExists(a.resolve("newdir")), "alice's trunk copy has no newdir")
+
+        deleter().delete("BR_FIX", listOf(a))
+
+        println(prompts.asked.joinToString("\n"))
+        assertTrue(
+            prompts.asked[0].startsWith("delete BR_FIX: unmerged {${name(a)}=1}, skipped [], failed [], tags [BR_FIX_MERGED_TRUNK]"),
+            prompts.asked[0],
+        )
+    }
+
+    /** The repository state a committed plugin merge of `BR_FIX` into the trunk leaves on [root]'s module. */
+    private fun mergedThroughPlugin(root: Path) {
+        session.tag(module(root), "BR_FIX_MERGING_TRUNK", "BR_FIX")
+        session.tag(module(root), "BR_FIX_MERGED_TRUNK", "BR_FIX")
+    }
+
+    /** alice adds [file] to [root] on the trunk after the branches were made, so it has none of them. */
+    private fun addOnTrunk(root: Path, file: String) {
+        TestData.write(root.resolve(file), "$file\n".toByteArray())
+        session.add(project.get(), root.resolve(file))
+        session.commit(project.get(), listOf(root.resolve(file)), "alice adds $file on the trunk")
+    }
+
+    /** bob commits [file] of [root]'s module with [content] on [branch] (the trunk when null); returns his copy. */
+    private fun commit(root: Path, branch: String?, file: String, content: String, copy: Path? = null): Path {
+        val bob = copy ?: session.checkout("bob", module(root), session.newDirectory("${name(root)}-bob"), tag = branch)
+        session.mapToCvs(project.get(), bob)
+        TestData.edit(bob.resolve(file), content.toByteArray())
+        session.commit(project.get(), listOf(bob.resolve(file)), "bob changes $file on ${branch ?: "the trunk"}")
+        return bob
+    }
+
+    /** Maps the project to alice's [roots] only after bob's commits: his copy on the branch would protect the module. */
+    private fun remap(vararg roots: Path) {
+        BranchFixtures.mapToCvs(project.get(), *roots)
+        refreshed(project.get())
     }
 
     private fun deleter() = BranchDeleter(project.get(), prompts)
