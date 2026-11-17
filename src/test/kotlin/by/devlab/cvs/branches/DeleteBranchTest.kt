@@ -392,6 +392,27 @@ class DeleteBranchTest {
         assertEquals(listOf(name(a)), report!!.switched)
     }
 
+    // 2.4 Failures do not stop the other roots
+
+    @Test
+    @DisplayName("Failure in one root")
+    fun failureInOneRoot() {
+        val (a, b) = roots("failure", listOf("BR_FIX"))
+        BranchFixtures.unreachable(a)
+
+        val report = deleter().delete("BR_FIX", listOf(a, b))
+
+        println(prompts.asked.joinToString("\n"))
+        println(report?.text())
+        assertNull(tag(b, ONE, "BR_FIX"))
+        assertNotNull(tag(a, ONE, "BR_FIX"))
+        assertEquals(listOf(name(b)), report!!.switched)
+        assertEquals(listOf(name(a)), report.failed.map { it.first })
+        assertTrue(report.failed.single().second.isNotBlank())
+        assertTrue("BR_FIX" in lists().list(a)!!.branches)
+        assertFalse("BR_FIX" in lists().list(b)!!.branches)
+    }
+
     private fun lists() = BranchListService.getInstance(project.get())
 
     private fun text(root: Path, file: String): String = TestData.text(root.resolve(file), Charsets.UTF_8)
