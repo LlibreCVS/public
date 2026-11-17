@@ -93,6 +93,7 @@ object BranchPopup {
             is BranchChoice.ForgetMerge -> BranchOperations.getInstance(project).queue("Forgetting CVS merge") {
                 MergeService.getInstance(project).forget(choice.root)
             }
+            is BranchChoice.DeleteBranch -> BranchDeleter(project).start(choice.branch, choice.roots)
         }
     }
 

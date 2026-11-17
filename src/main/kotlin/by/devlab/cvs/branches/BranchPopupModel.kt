@@ -26,6 +26,9 @@ sealed interface BranchChoice {
 
     /** Forget [root]'s unfinished merge without moving its merge point (cvs-branch-merge decision 8). */
     data class ForgetMerge(val root: Path) : BranchChoice
+
+    /** Delete [branch] and its merge-point tags in the modules of [roots] (cvs-branch-delete decision 7). */
+    data class DeleteBranch(val branch: String, val roots: List<Path>) : BranchChoice
 }
 
 /**
@@ -75,6 +78,7 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
         const val MERGE_TRUNK = "Merge Trunk into Current"
         const val SWITCH = "Switch"
         const val MERGE_INTO_CURRENT = "Merge into Current"
+        const val DELETE_BRANCH = "Delete Branch…"
         const val COMPLETE_MERGE = "Complete Merge"
         const val FORGET_MERGE = "Forget Merge"
         const val LOADING = "Loading branches…"
@@ -133,8 +137,9 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
 
         /**
          * New Branch…, Back to Trunk, Merge Trunk into Current and [branches] acting on [roots], each branch a submenu
-         * with Switch and Merge into Current (cvs-branch-merge decision 10). A branch every root is on, with no file on
-         * another branch, is current: its Switch chooses nothing and it offers no merge (design decisions 6, 19). When
+         * with Switch, Merge into Current and Delete Branch… (cvs-branch-merge decision 10, cvs-branch-delete decision 7).
+         * A branch every root is on, with no file on another branch, is current: its Switch chooses nothing and it offers
+         * no merge and no deletion (design decisions 6, 19). When
          * [busy], every entry is disabled (design decision 21).
          */
         private fun rootEntries(roots: List<BranchStateService.Root>, branches: List<String>, busy: Boolean): List<Entry> {
@@ -153,7 +158,10 @@ class BranchPopupModel(val entries: List<Entry>, val loading: List<Path>) {
                 val current = roots.all { it.status.state == target && it.status.mixedFiles == 0 }
                 // Each branch is a submenu (decision 10); the current one switches nothing and offers no merge.
                 val actions = mutableListOf<Entry>(Item(SWITCH, if (current) null else BranchChoice.Switch(branch, paths), enabled = !busy))
-                if (!current) actions += Item(MERGE_INTO_CURRENT, BranchChoice.Merge(SwitchTarget.Branch(branch), paths), enabled = !busy)
+                if (!current) {
+                    actions += Item(MERGE_INTO_CURRENT, BranchChoice.Merge(SwitchTarget.Branch(branch), paths), enabled = !busy)
+                    actions += Item(DELETE_BRANCH, BranchChoice.DeleteBranch(branch, paths), enabled = !busy)
+                }
                 entries += Submenu(branch, actions, current = current)
             }
             return entries
