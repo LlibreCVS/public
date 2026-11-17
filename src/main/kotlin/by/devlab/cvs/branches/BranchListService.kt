@@ -173,6 +173,24 @@ class BranchListService(private val project: Project) : PersistentStateComponent
         publish()
     }
 
+    /**
+     * Drops [branch] and its counts from the remembered list of [root] without contacting the server (cvs-branch-delete
+     * decision 12).
+     */
+    fun remove(root: Path, branch: String) {
+        synchronized(lock) {
+            val key = key(root)
+            val list = lists[key] ?: return
+            if (branch !in list.branches) return
+            lists[key] = list.copy(
+                branches = list.branches - branch,
+                coverage = list.coverage - branch,
+                missingDirs = list.missingDirs - branch,
+            )
+        }
+        publish()
+    }
+
     /** Adds [branch] to the remembered list of [root] without contacting the server (design decision 5). */
     fun add(root: Path, branch: String) {
         synchronized(lock) {
