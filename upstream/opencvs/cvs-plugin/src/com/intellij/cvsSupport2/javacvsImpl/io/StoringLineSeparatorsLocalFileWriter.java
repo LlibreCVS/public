@@ -113,7 +113,7 @@ public class StoringLineSeparatorsLocalFileWriter implements ILocalFileWriter {
       myLocalFileWriter.writeBinaryFile(fileObject, length, inputStream, readOnly, fileReadOnlyHandler, cvsFileSystem);
     }
     catch (IOException ex) {
-      processException(ex, inputStream, length, cvsFileSystem.getLocalFileSystem(), fileObject, myCvsRoot);
+      throw processWriteException(ex, cvsFileSystem.getLocalFileSystem(), fileObject);
     }
 
   }
@@ -145,9 +145,20 @@ public class StoringLineSeparatorsLocalFileWriter implements ILocalFileWriter {
                                       fileSystem, charSet);
     }
     catch (IOException ex) {
-      processException(ex, inputStream, length, fileSystem, fileObject, myCvsRoot);
+      throw processWriteException(ex, fileSystem, fileObject);
     }
 
+  }
+
+  /**
+   * Keeps the bookkeeping of a failed write and returns the exception to rethrow: the response handler skips the rest of
+   * the file's bytes and reports the file, and the file gets no CVS/Entries line.
+   */
+  private IOException processWriteException(IOException ex, IFileSystem fileSystem, FileObject fileObject) {
+    if (ex.getLocalizedMessage() != null && ex.getLocalizedMessage().startsWith(COULD_NOT_DELETE_FILE_PREFIX)) {
+      myUpdatedFilesManager.couldNotUpdateFile(fileSystem.getFile(fileObject));
+    }
+    return ex;
   }
 
   private void processException(IOException ex,

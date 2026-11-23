@@ -14,6 +14,7 @@
  *****************************************************************************/
 package org.netbeans.lib.cvsclient.response;
 
+import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NonNls;
 import org.netbeans.lib.cvsclient.IClientEnvironment;
 import org.netbeans.lib.cvsclient.IConnectionStreams;
@@ -21,6 +22,7 @@ import org.netbeans.lib.cvsclient.admin.Entry;
 import org.netbeans.lib.cvsclient.admin.IAdminWriter;
 import org.netbeans.lib.cvsclient.command.update.UpdatedFileInfo;
 import org.netbeans.lib.cvsclient.file.*;
+import org.netbeans.lib.cvsclient.util.BoundedInputStream;
 
 import java.io.File;
 import java.io.IOException;
@@ -33,6 +35,8 @@ import java.util.Date;
  * @author Thomas Singer
  */
 public final class DefaultResponseHandler extends AbstractResponseHandler {
+
+  private static final Logger LOG = Logger.getInstance(DefaultResponseHandler.class);
 
   // Implemented ============================================================
 
@@ -261,6 +265,35 @@ public final class DefaultResponseHandler extends AbstractResponseHandler {
                                                    int fileLength,
                                                    IConnectionStreams connectionStreams,
                                                    boolean merged) throws IOException {
+    // The file's bytes are read through a stream bounded to its length, and any failure while receiving it skips
+    // exactly this file: the rest of its bytes are drained, so the next response is parsed in step.
+    final BoundedInputStream content = new BoundedInputStream(connectionStreams.getInputStream(), fileLength);
+    try {
+      receiveFile(clientEnvironment, relativeLocalDirectory, repositoryFilePath, entryLine, responseServices, mode, fileLength,
+                  content, connectionStreams.getReaderFactory(), merged);
+    }
+    catch (Exception ex) {
+      content.drain();
+      final String path = FileUtils.removeTrailingSlash(relativeLocalDirectory.equals("./") ? "" : relativeLocalDirectory);
+      final String relativePath = (path.isEmpty() ? "" : path + "/") + repositoryFilePath.substring(repositoryFilePath.lastIndexOf('/') + 1);
+      LOG.warn("Could not receive " + relativePath, ex);
+      final String reason = ex.getLocalizedMessage() != null ? ex.getLocalizedMessage() : ex.getClass().getName();
+      final String message = "cvs checkout: could not receive " + relativePath + ": " + reason;
+      responseServices.getEventSender().notifyMessageListeners(message.getBytes(Charset.forName(clientEnvironment.getCharset())),
+                                                               true, false);
+    }
+  }
+
+  private static void receiveFile(IClientEnvironment clientEnvironment,
+                                  String relativeLocalDirectory,
+                                  String repositoryFilePath,
+                                  String entryLine,
+                                  IResponseServices responseServices,
+                                  String mode,
+                                  int fileLength,
+                                  InputStream content,
+                                  IReaderFactory readerFactory,
+                                  boolean merged) throws IOException {
     final ICvsFileSystem cvsFileSystem = clientEnvironment.getCvsFileSystem();
     final FileObject fileObject = cvsFileSystem.getFileObject(relativeLocalDirectory, repositoryFilePath);
     final Entry entry = Entry.createEntryForLine(entryLine);
@@ -273,8 +306,7 @@ public final class DefaultResponseHandler extends AbstractResponseHandler {
     final boolean binary = entry.isBinary();
     final boolean readOnly = FileUtils.isReadOnlyMode(mode);
     final Charset charSet = entry.isUnicode() ? StandardCharsets.UTF_16LE : null;
-    writeFile(fileObject, fileLength, connectionStreams.getInputStream(), connectionStreams.getReaderFactory(), binary, readOnly,
-              clientEnvironment, charSet);
+    writeFile(fileObject, fileLength, content, readerFactory, binary, readOnly, clientEnvironment, charSet);
 
     updateEntriesFileTime(fileObject, entry, cvsFileSystem, merged);
 
