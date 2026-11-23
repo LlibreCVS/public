@@ -2,7 +2,9 @@ package by.devlab.cvs.checkout
 
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import com.intellij.openapi.progress.ProcessCanceledException
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -62,6 +64,41 @@ class ReceivedFileIsolationTest {
     private val errors = mutableListOf<String>()
     private val behaviors = mutableMapOf<String, Behavior>()
     private var failingEntry: String? = null
+    private var entryFailure: () -> Throwable = { IllegalStateException("entries file is broken") }
+    private var failingListener: String? = null
+
+    @Test
+    @DisplayName("Cancellation while receiving a file is not reported as a failed file")
+    fun cancellationWhileReceivingAFileIsNotReportedAsAFailedFile() {
+        failingEntry = "a.bin"
+        entryFailure = { ProcessCanceledException() }
+        val stream = stream("a.bin" to "first".toByteArray())
+
+        assertThrows(ProcessCanceledException::class.java) { receiveBinary(stream, "a.bin", "first".length) }
+        assertEquals(emptyList<String>(), errors)
+    }
+
+    @Test
+    @DisplayName("A broken connection keeps the file's original failure")
+    fun aBrokenConnectionKeepsTheFilesOriginalFailure() {
+        behaviors["a.bin"] = Behavior.FailAfter(3)
+        // The connection ends after 5 of the file's 15 bytes.
+        val stream = ByteArrayInputStream("first".toByteArray())
+
+        val thrown = assertThrows(IOException::class.java) { receiveBinary(stream, "a.bin", 15) }
+        assertTrue(thrown.suppressed.any { it.message == "disk full" } || thrown.message == "disk full", "$thrown")
+    }
+
+    @Test
+    @DisplayName("A failing listener does not report a received file as failed")
+    fun aFailingListenerDoesNotReportAReceivedFileAsFailed() {
+        failingListener = "a.bin"
+        val stream = stream("a.bin" to "first".toByteArray())
+
+        assertThrows(IllegalStateException::class.java) { receiveBinary(stream, "a.bin", "first".length) }
+        assertEquals(listOf("a.bin"), entries)
+        assertEquals(emptyList<String>(), errors)
+    }
 
     @Test
     @DisplayName("A file that fails part-way does not disturb the next file")
@@ -215,7 +252,7 @@ class ReceivedFileIsolationTest {
     private val adminWriter = object : IAdminWriter {
         override fun ensureCvsDirectory(directoryObject: DirectoryObject, repositoryPath: String, cvsRoot: CvsRoot, cvsFileSystem: ICvsFileSystem) {}
         override fun setEntry(directoryObject: DirectoryObject, entry: Entry, cvsFileSystem: ICvsFileSystem) {
-            if (entry.fileName == failingEntry) throw IllegalStateException("entries file is broken")
+            if (entry.fileName == failingEntry) throw entryFailure()
             entries += entry.fileName
         }
         override fun removeEntryForFile(fileObject: AbstractFileObject, cvsFileSystem: ICvsFileSystem) = unused()
@@ -240,7 +277,9 @@ class ReceivedFileIsolationTest {
             override fun notifyFileInfoListeners(fileInfoContainer: Any) {}
             override fun notifyFileInfoListeners(fileInfoContainer: ByteArray) {}
             override fun notifyModuleExpansionListeners(module: String) {}
-            override fun notifyEntryListeners(fileObject: FileObject, entry: Entry?) {}
+            override fun notifyEntryListeners(fileObject: FileObject, entry: Entry?) {
+                check(fileObject.name != failingListener) { "listener failed" }
+            }
             override fun notifyDirectoryListeners(directoryObject: DirectoryObject, setStatic: Boolean) {}
         }
         return object : IResponseServices {
