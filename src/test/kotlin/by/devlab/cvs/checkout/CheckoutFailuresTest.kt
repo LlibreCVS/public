@@ -25,6 +25,9 @@ class CheckoutFailuresTest {
         val session = CvsTestSession()
 
         const val BLOCKED = "файл.txt"
+
+        /** Sorted after [BLOCKED], so the server sends it after the failed file. */
+        const val LATER = "ящик.txt"
     }
 
     @Test
@@ -35,7 +38,7 @@ class CheckoutFailuresTest {
         val source = session.newDirectory("$module-seed")
         source.resolve("a.txt").writeText("alpha\n")
         source.resolve(BLOCKED).writeText("blocked\n")
-        source.resolve("z.txt").writeText("omega\n")
+        source.resolve(LATER).writeText("omega\n")
         session.importModule("alice", source, module)
 
         val target = session.newDirectory("$module-wc")
@@ -46,11 +49,12 @@ class CheckoutFailuresTest {
         val handler = session.checkoutWithProblems("alice", module, target)
 
         val workingCopy = target.resolve(module)
-        assertEquals("alpha\n", workingCopy.resolve("a.txt").readText())
-        assertEquals("omega\n", workingCopy.resolve("z.txt").readText())
+        // Text files arrive with the platform's line separator.
+        assertEquals("alpha", workingCopy.resolve("a.txt").readText().trimEnd())
+        assertEquals("omega", workingCopy.resolve(LATER).readText().trimEnd())
         val entries = workingCopy.resolve("CVS").resolve("Entries").readText(Charsets.UTF_8)
         assertTrue(entries.lines().any { it.startsWith("/a.txt/") }, entries)
-        assertTrue(entries.lines().any { it.startsWith("/z.txt/") }, entries)
+        assertTrue(entries.lines().any { it.startsWith("/$LATER/") }, entries)
         assertFalse(entries.lines().any { it.startsWith("/$BLOCKED/") }, entries)
 
         val problems = CheckoutProblems.of(handler)

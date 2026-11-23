@@ -48,6 +48,8 @@ public class CvsMessagesTranslator implements IFileInfoListener, IMessageListene
     new CvsMessagePattern("Usage: cvs* server*"),
     new CvsMessagePattern("cvs*: invalid option*"),
     new CvsMessagePattern(new String[]{"cvs checkout: could not check out ", "*"}, 2),
+    // LibreCVS upstream-patch: a file javacvs could not receive (DefaultResponseHandler) is an error of the command.
+    new CvsMessagePattern("cvs*: could not receive *"),
     new CvsMessagePattern("cvs* update: could not merge revision * of *: No such file or directory"),
     new CvsMessagePattern(new String[]{"cvs* update: could not patch ", "*", "; will refetch"}, 2),
     new CvsMessagePattern("dying gasps from * unexpected"),
