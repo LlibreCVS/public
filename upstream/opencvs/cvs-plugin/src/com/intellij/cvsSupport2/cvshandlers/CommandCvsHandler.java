@@ -49,6 +49,7 @@ import com.intellij.cvsSupport2.util.CvsVfsUtil;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.PerformInBackgroundOption;
 import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.diagnostic.ControlFlowException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.FilePath;
@@ -141,8 +142,27 @@ public class CommandCvsHandler extends CvsHandler {
                                                  boolean makeNewFilesReadOnly, final PerformInBackgroundOption option) {
     final CheckoutProjectOperation checkoutOperation = CheckoutProjectOperation.create(environment, checkoutPath, target,
                                         useAltCheckoutDir, makeNewFilesReadOnly);
+    return createCheckoutHandler(checkoutOperation, option);
+  }
+
+  /** LibreCVS upstream-patch: the checkout handler around any operation, so that tests can pass one that fails. */
+  public static CvsHandler createCheckoutHandler(final CvsOperation checkoutOperation, final PerformInBackgroundOption option) {
     return new CommandCvsHandler(CvsBundle.message("operation.name.check.out.project"), checkoutOperation, FileSetToBeUpdated.allFiles(),
                                  (option == null) ? PerformInBackgroundOption.DEAF : option) {
+      // LibreCVS upstream-patch: whatever the operation throws, except cancellation, becomes an error of the handler,
+      // so that the executor's final step (and with it the checkout's completion) always runs.
+      @Override
+      public void run(Project project, ModalityContext executor) {
+        try {
+          super.run(project, executor);
+        }
+        catch (Throwable t) {
+          if (t instanceof ControlFlowException) throw t;
+          LOG.warn("Checkout failed", t);
+          myErrors.add(new CvsException(t.toString(), t, checkoutOperation.getLastProcessedCvsRoot()));
+        }
+      }
+
       @Override
       public void finish() {
         CvsEntriesManager.getInstance().clearAll();
