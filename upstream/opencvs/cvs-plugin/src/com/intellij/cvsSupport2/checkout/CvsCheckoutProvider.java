@@ -17,7 +17,9 @@ package com.intellij.cvsSupport2.checkout;
 
 import com.intellij.openapi.progress.PerformInBackgroundOption;
 
-import com.intellij.CvsBundle;
+import by.devlab.cvs.checkout.CheckoutCompletion;
+import by.devlab.cvs.checkout.CheckoutProblems;
+import by.devlab.cvs.checkout.CheckoutPrompts;
 import com.intellij.cvsSupport2.CvsVcs2;
 import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration;
 import com.intellij.cvsSupport2.cvsBrowser.CvsElement;
@@ -29,13 +31,14 @@ import com.intellij.cvsSupport2.cvshandlers.CvsHandler;
 import com.intellij.cvsSupport2.ui.experts.checkout.CheckoutWizard;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vcs.CheckoutProvider;
 import com.intellij.openapi.vcs.VcsConfiguration;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 public class CvsCheckoutProvider implements CheckoutProvider {
   @Override
@@ -58,15 +61,13 @@ public class CvsCheckoutProvider implements CheckoutProvider {
       PerformInBackgroundOption.DEAF);
 
     final CvsOperationExecutor executor = new CvsOperationExecutor(null);
+    // LibreCVS upstream-patch: the problems go to the one dialog of CheckoutCompletion, not to error dialogs.
+    executor.setShowErrors(false);
     executor.performActionSync(checkoutHandler, new CvsOperationExecutorCallback() {
       @Override
       public void executionFinished(boolean successfully) {
-        if (!executor.hasNoErrors()) {
-          Messages.showErrorDialog(CvsBundle.message("message.error.checkout", executor.getResult().composeError().getLocalizedMessage()),
-                                   CvsBundle.message("operation.name.check.out.project"));
-        }
-
-        refreshAfterCheckout(listener, selectedElements, checkoutDirectory, useAlternateCheckoutPath);
+        refreshAfterCheckout(listener, selectedElements, checkoutDirectory, useAlternateCheckoutPath,
+                             CheckoutProblems.Companion.of(checkoutHandler));
       }
 
       @Override
@@ -88,6 +89,20 @@ public class CvsCheckoutProvider implements CheckoutProvider {
         listener.directoryCheckedOut(path, CvsVcs2.getKey());
       }
       listener.checkoutCompleted();
+    }));
+  }
+
+  private static void refreshAfterCheckout(final Listener listener, final CvsElement[] selectedElements, final File checkoutDirectory,
+                                           final boolean useAlternateCheckoutPath, final CheckoutProblems problems) {
+
+    VirtualFileManager.getInstance().asyncRefresh(() -> ApplicationManager.getApplication().invokeLater(() -> {
+      final List<File> directories = new ArrayList<>();
+      for (CvsElement element : selectedElements) {
+        directories.add(useAlternateCheckoutPath ? checkoutDirectory : new File(checkoutDirectory, element.getCheckoutPath()));
+      }
+      // LibreCVS upstream-patch: with problems the user decides whether the project is created.
+      new CheckoutCompletion(CheckoutPrompts.Companion.getUI())
+        .complete(String.join(", ", collectCheckoutPaths(selectedElements)), problems, directories, listener);
     }));
   }
 
