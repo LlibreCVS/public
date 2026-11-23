@@ -146,6 +146,19 @@ class CvsTestSession : BeforeAllCallback, AfterAllCallback, AfterEachCallback {
     }
 
     /**
+     * Checks [module] out as [user] into [target] the way the checkout wizard does and returns the handler, whose errors
+     * are the checkout's problems; unlike [checkout] it does not fail on CVS errors.
+     */
+    fun checkoutWithProblems(user: String, module: String, target: Path): CvsHandler {
+        val handler = CommandCvsHandler.createCheckoutHandler(environment(user), arrayOf(module), target.toFile(), false, false, null)
+        handler.addCvsListener(CvsMessagesListener.STANDARD_OUTPUT)
+        val executor = CvsOperationExecutor(false, null, ModalityState.nonModal())
+        executor.setShowErrors(false)
+        executor.performActionSync(handler, CvsOperationExecutorCallback.EMPTY)
+        return handler
+    }
+
+    /**
      * Runs [handler] the way the plugin's actions do and fails with the first CVS error, if any, also one the plugin
      * reports only as an error message.
      */
