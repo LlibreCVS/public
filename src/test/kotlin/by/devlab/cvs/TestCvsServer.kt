@@ -65,6 +65,7 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
     private val processes = CopyOnWriteArrayList<ProcessHandle>()
     private val descendants = CopyOnWriteArrayList<ProcessHandle>()
     private val connectionCount = AtomicInteger()
+    private val requestBytes = java.io.ByteArrayOutputStream()
 
     /**
      * The encoding the plugin talks in; connections opened while it is not UTF-8 are transcoded to UTF-8 for the
@@ -81,6 +82,12 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
 
     /** The repository path as clients name it: the msys form the server was allowed (design decision 8). */
     val repositoryPath: String get() = msysPath(repository)
+
+    /**
+     * The lines every client has sent to this server so far, in the client's encoding as received (requests such as
+     * `co`, their arguments, and file contents of commits), for tests that check which requests were made.
+     */
+    fun requestLines(): List<String> = synchronized(requestBytes) { requestBytes.toByteArray() }.decodeToString().lines()
 
     /** A file of the repository, e.g. an RCS file `module/file.txt,v`, for inspection by the tests. */
     fun repositoryFile(relative: String): Path = repository.resolve(relative)
@@ -154,8 +161,16 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
         val transcode = charset != Charsets.UTF_8
         val requests = if (transcode) CvsProtocolTranscoder.requests(charset, Charsets.UTF_8) else null
         val responses = if (transcode) CvsProtocolTranscoder.responses(Charsets.UTF_8, charset) else null
-        pump("in", socket.getInputStream(), process.outputStream, requests) { process.outputStream.close() }
+        pump("in", RecordingInputStream(socket.getInputStream()), process.outputStream, requests) { process.outputStream.close() }
         pump("out", process.inputStream, socket.getOutputStream(), responses) { socket.close() }
+    }
+
+    /** Passes the client's bytes through and keeps a copy of them for [requestLines]. */
+    private inner class RecordingInputStream(private val from: InputStream) : java.io.FilterInputStream(from) {
+        override fun read(): Int = super.read().also { if (it >= 0) synchronized(requestBytes) { requestBytes.write(it) } }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+            super.read(buffer, offset, length).also { if (it > 0) synchronized(requestBytes) { requestBytes.write(buffer, offset, it) } }
     }
 
     /**

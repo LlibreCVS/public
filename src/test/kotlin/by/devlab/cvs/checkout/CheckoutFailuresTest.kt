@@ -62,4 +62,50 @@ class CheckoutFailuresTest {
         assertTrue(problems.lines[0].contains("$module/$BLOCKED"), problems.lines[0])
         assertFalse(problems.aborted)
     }
+
+    @Test
+    @DisplayName("A server abort ends the checkout with what arrived")
+    fun aServerAbortEndsTheCheckoutWithWhatArrived() {
+        session.useEncoding(Charsets.UTF_8)
+        val module = "checkout-abort"
+        val source = session.newDirectory("$module-seed")
+        listOf("a", "b", "c").forEach { source.resolve("$it.txt").writeText("$it\n") }
+        session.importModule("alice", source, module)
+        // A damaged RCS file: the server cannot parse it when it reaches c.txt (design.md risk on damaged RCS).
+        val rcsFile = session.server.repositoryFile("$module/c.txt,v")
+        rcsFile.toFile().setWritable(true)
+        overwrite(rcsFile, "garbage\n")
+
+        val checkoutsBefore = checkoutRequests()
+        val handler = session.checkoutWithProblems("alice", module, session.newDirectory("$module-wc").also { target = it })
+
+        val workingCopy = target.resolve(module)
+        assertEquals("a", workingCopy.resolve("a.txt").readText().trimEnd())
+        assertEquals("b", workingCopy.resolve("b.txt").readText().trimEnd())
+        val problems = CheckoutProblems.of(handler)
+        assertTrue(problems.aborted, "${problems.lines}")
+        assertTrue(problems.abortMessage!!.contains("aborted"), problems.abortMessage)
+        assertEquals(1, checkoutRequests() - checkoutsBefore, "checkout requests sent")
+    }
+
+    private lateinit var target: java.nio.file.Path
+
+    /**
+     * Writes [text] to [file], waiting while the server process of the previous connection still maps it (Windows
+     * refuses to write a file with a mapped section open until that process exits).
+     */
+    private fun overwrite(file: java.nio.file.Path, text: String) {
+        val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30)
+        while (true) {
+            try {
+                file.writeText(text)
+                return
+            } catch (e: java.nio.file.FileSystemException) {
+                if (System.nanoTime() > deadline) throw e
+                Thread.sleep(100)
+            }
+        }
+    }
+
+    private fun checkoutRequests(): Int = session.server.requestLines().count { it == "co" }
 }
