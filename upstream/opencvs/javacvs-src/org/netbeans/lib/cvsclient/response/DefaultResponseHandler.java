@@ -14,6 +14,7 @@
  *****************************************************************************/
 package org.netbeans.lib.cvsclient.response;
 
+import com.intellij.openapi.diagnostic.ControlFlowException;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NonNls;
 import org.netbeans.lib.cvsclient.IClientEnvironment;
@@ -268,23 +269,44 @@ public final class DefaultResponseHandler extends AbstractResponseHandler {
     // The file's bytes are read through a stream bounded to its length, and any failure while receiving it skips
     // exactly this file: the rest of its bytes are drained, so the next response is parsed in step.
     final BoundedInputStream content = new BoundedInputStream(connectionStreams.getInputStream(), fileLength);
+    final Entry entry;
     try {
-      receiveFile(clientEnvironment, relativeLocalDirectory, repositoryFilePath, entryLine, responseServices, mode, fileLength,
-                  content, connectionStreams.getReaderFactory(), merged);
+      entry = receiveFile(clientEnvironment, relativeLocalDirectory, repositoryFilePath, entryLine, responseServices, mode,
+                          fileLength, content, connectionStreams.getReaderFactory(), merged);
     }
     catch (Exception ex) {
-      content.drain();
+      // Cancellation is not a failure of this file: it ends the command as before.
+      if (ex instanceof ControlFlowException) throw (RuntimeException)ex;
       final String path = FileUtils.removeTrailingSlash(relativeLocalDirectory.equals("./") ? "" : relativeLocalDirectory);
       final String relativePath = (path.isEmpty() ? "" : path + "/") + repositoryFilePath.substring(repositoryFilePath.lastIndexOf('/') + 1);
       LOG.warn("Could not receive " + relativePath, ex);
+      try {
+        content.drain();
+      }
+      catch (IOException streamFailure) {
+        // The connection itself broke: the command ends, and the file's own failure travels with it.
+        streamFailure.addSuppressed(ex);
+        throw streamFailure;
+      }
       final String reason = ex.getLocalizedMessage() != null ? ex.getLocalizedMessage() : ex.getClass().getName();
       final String message = "cvs checkout: could not receive " + relativePath + ": " + reason;
       responseServices.getEventSender().notifyMessageListeners(message.getBytes(Charset.forName(clientEnvironment.getCharset())),
                                                                true, false);
+      return;
     }
+    // The file and its entry are in place: listeners are told outside the per-file catch, so that their failure is
+    // never reported as a file that could not be received.
+    final ICvsFileSystem cvsFileSystem = clientEnvironment.getCvsFileSystem();
+    final FileObject fileObject = cvsFileSystem.getFileObject(relativeLocalDirectory, repositoryFilePath);
+    responseServices.getEventSender().notifyEntryListeners(fileObject, entry);
+    responseServices.getEventSender().notifyFileInfoListeners(new UpdatedFileInfo(fileObject,
+                                                                                  cvsFileSystem.getLocalFileSystem().getFile(fileObject),
+                                                                                  merged
+                                                                                  ? UpdatedFileInfo.UpdatedType.MERGED
+                                                                                  : UpdatedFileInfo.UpdatedType.UPDATED, entry));
   }
 
-  private static void receiveFile(IClientEnvironment clientEnvironment,
+  private static Entry receiveFile(IClientEnvironment clientEnvironment,
                                   String relativeLocalDirectory,
                                   String repositoryFilePath,
                                   String entryLine,
@@ -313,12 +335,7 @@ public final class DefaultResponseHandler extends AbstractResponseHandler {
     final IAdminWriter adminWriter = clientEnvironment.getAdminWriter();
     adminWriter.ensureCvsDirectory(fileObject.getParent(), repositoryFilePath, clientEnvironment.getCvsRoot(), cvsFileSystem);
     adminWriter.setEntry(fileObject.getParent(), entry, cvsFileSystem);
-    responseServices.getEventSender().notifyEntryListeners(fileObject, entry);
-    responseServices.getEventSender().notifyFileInfoListeners(new UpdatedFileInfo(fileObject,
-                                                                                  cvsFileSystem.getLocalFileSystem().getFile(fileObject),
-                                                                                  merged
-                                                                                  ? UpdatedFileInfo.UpdatedType.MERGED
-                                                                                  : UpdatedFileInfo.UpdatedType.UPDATED, entry));
+    return entry;
   }
 
   private static void writeFile(FileObject fileObject,

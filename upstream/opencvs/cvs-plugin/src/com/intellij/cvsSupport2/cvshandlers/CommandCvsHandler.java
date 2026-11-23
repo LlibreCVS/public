@@ -157,7 +157,7 @@ public class CommandCvsHandler extends CvsHandler {
           super.run(project, executor);
         }
         catch (Throwable t) {
-          if (t instanceof ControlFlowException) throw t;
+          if (t instanceof ControlFlowException || t instanceof java.util.concurrent.CancellationException) throw t;
           LOG.warn("Checkout failed", t);
           myErrors.add(new CvsException(t.toString(), t, checkoutOperation.getLastProcessedCvsRoot()));
         }
