@@ -20,7 +20,6 @@ import com.intellij.openapi.progress.PerformInBackgroundOption;
 import by.devlab.cvs.checkout.CheckoutCompletion;
 import by.devlab.cvs.checkout.CheckoutProblems;
 import by.devlab.cvs.checkout.CheckoutPrompts;
-import com.intellij.cvsSupport2.CvsVcs2;
 import com.intellij.cvsSupport2.config.CvsApplicationLevelConfiguration;
 import com.intellij.cvsSupport2.cvsBrowser.CvsElement;
 import com.intellij.cvsSupport2.cvsExecution.CvsOperationExecutor;
@@ -82,14 +81,9 @@ public class CvsCheckoutProvider implements CheckoutProvider {
 
   public void refreshAfterCheckout(final Listener listener, final CvsElement[] selectedElements, final File checkoutDirectory,
                                    final boolean useAlternateCheckoutPath) {
-
-    VirtualFileManager.getInstance().asyncRefresh(() -> ApplicationManager.getApplication().invokeLater(() -> {
-      for (CvsElement element : selectedElements) {
-        final File path = useAlternateCheckoutPath ? checkoutDirectory : new File(checkoutDirectory, element.getCheckoutPath());
-        listener.directoryCheckedOut(path, CvsVcs2.getKey());
-      }
-      listener.checkoutCompleted();
-    }));
+    // LibreCVS upstream-patch: through CheckoutCompletion, which calls the listener off the EDT (design decision 19).
+    refreshAfterCheckout(listener, selectedElements, checkoutDirectory, useAlternateCheckoutPath,
+                         new CheckoutProblems(List.of(), null));
   }
 
   private static void refreshAfterCheckout(final Listener listener, final CvsElement[] selectedElements, final File checkoutDirectory,
