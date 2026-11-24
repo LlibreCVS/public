@@ -2,6 +2,7 @@ package by.devlab.cvs.checkout
 
 import by.devlab.cvs.CvsTestSession
 import by.devlab.cvs.checkout.CheckoutFixtures.BLOCKED
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.vcs.CheckoutProvider
 import com.intellij.openapi.vcs.VcsKey
 import com.intellij.testFramework.junit5.TestApplication
@@ -12,6 +13,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.RegisterExtension
 import java.io.File
 import java.nio.file.Files
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import javax.swing.SwingUtilities
 
 /**
  * Capability cvs-operations, requirement "Checkout ends with one problem report that asks before creating the
@@ -27,17 +32,29 @@ class CheckoutCompletionTest {
         val session = CvsTestSession()
     }
 
-    /** Records what the checkout told the "Get from Version Control" listener. */
+    /** One call the listener got: its name and whether it ran on the EDT. */
+    private data class Call(val name: String, val onEdt: Boolean)
+
+    /**
+     * Records what the checkout told the "Get from Version Control" listener, with the thread of each call;
+     * [done] is released by `checkoutCompleted`.
+     */
     private class RecordingListener : CheckoutProvider.Listener {
-        val checkedOut = mutableListOf<File>()
+        val checkedOut: MutableList<File> = Collections.synchronizedList(mutableListOf())
+        val calls: MutableList<Call> = Collections.synchronizedList(mutableListOf())
+        @Volatile
         var completed = 0
+        val done = CountDownLatch(1)
 
         override fun directoryCheckedOut(directory: File, vcs: VcsKey) {
+            calls += Call("directoryCheckedOut", SwingUtilities.isEventDispatchThread())
             checkedOut += directory
         }
 
         override fun checkoutCompleted() {
+            calls += Call("checkoutCompleted", SwingUtilities.isEventDispatchThread())
             completed++
+            done.countDown()
         }
     }
 
@@ -103,9 +120,30 @@ class CheckoutCompletionTest {
         assertTrue(question.problems.abortMessage!!.startsWith("cvs [checkout aborted]: "), question.problems.abortMessage)
     }
 
-    private fun complete(module: String, checkout: CheckoutFixtures.Checkout) {
-        CheckoutCompletion(prompts).complete(
-            module, CheckoutProblems.of(checkout.handler), listOf(checkout.workingCopy.toFile()), listener,
+    @Test
+    @DisplayName("Project is opened off the EDT")
+    fun projectIsOpenedOffTheEdt() {
+        val module = "completion-thread"
+        val checkout = CheckoutFixtures.cleanCheckout(session, module)
+
+        complete(module, checkout)
+
+        assertEquals(
+            listOf(Call("directoryCheckedOut", false), Call("checkoutCompleted", false)),
+            listener.calls.toList(),
         )
+    }
+
+    /**
+     * Calls [CheckoutCompletion] on the EDT, as the executor's callback does, and waits until the listener's checkout
+     * completed (design decision 19: the listener calls run on a pooled thread).
+     */
+    private fun complete(module: String, checkout: CheckoutFixtures.Checkout) {
+        ApplicationManager.getApplication().invokeAndWait {
+            CheckoutCompletion(prompts).complete(
+                module, CheckoutProblems.of(checkout.handler), listOf(checkout.workingCopy.toFile()), listener,
+            )
+        }
+        assertTrue(listener.done.await(30, TimeUnit.SECONDS), "checkoutCompleted was not called")
     }
 }
