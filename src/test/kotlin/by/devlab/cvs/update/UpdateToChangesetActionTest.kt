@@ -161,7 +161,7 @@ class UpdateToChangesetActionTest {
 
         val text = "${notification!!.title}\n${notification.content}"
         println(text)
-        assertEquals(setOf(a, b, foreign), offered?.toSet(), "the dialog validates folders against every CVS root")
+        assertEquals(setOf(a, b), offered?.toSet(), "a folder is accepted only in a root on the changeset's repository")
         assertEquals("one, changeset\n", text(a))
         assertEquals(BranchKind.DATE, BranchState.read(a).kind)
         assertEquals(BranchKind.DATE, BranchState.read(b).kind)
@@ -183,7 +183,35 @@ class UpdateToChangesetActionTest {
 
         val text = "${notification!!.title}\n${notification.content}"
         assertTrue(text.contains("Updated: ${root.fileName}/dir"), text)
-        assertEquals("one, later\n", text(root))
+        assertEquals(BranchKind.DATE, BranchState.read(folder).kind, "the folder is sticky on the date")
+        assertEquals(BranchState.TRUNK, BranchState.read(root))
+    }
+
+    // Code review: a mapped folder above several checkouts is not a root; its working copies are (decision 17).
+    @Test
+    @DisplayName("Whole project under a mapped parent folder updates its working copies")
+    fun wholeProjectUnderAMappedParentFolderUpdatesItsWorkingCopies() {
+        val parent = session.newDirectory("parent-wc")
+        val (a, b) = listOf("parent-a", "parent-b").map { module ->
+            val seed = session.newDirectory("$module-seed")
+            TestData.write(seed.resolve(ONE), "one\n".toByteArray())
+            session.importModule("alice", seed, module)
+            session.checkout("alice", module, parent)
+        }
+        BranchFixtures.mapToCvs(project.get(), parent)
+        Thread.sleep(PAUSE)
+        edit(a, "one, changeset\n", "the changeset")
+        Thread.sleep(PAUSE)
+        edit(a, "one, later\n", "a later edit")
+        val changeset = changeset(a, "the changeset")
+
+        val notification = perform(changeset, UpdateScopeSource { _, _, _ -> UpdateScope.WholeProject })
+
+        val text = "${notification!!.title}\n${notification.content}"
+        println(text)
+        assertEquals("one, changeset\n", text(a))
+        assertEquals(BranchKind.DATE, BranchState.read(b).kind)
+        assertTrue(text.contains("Updated: ${a.fileName}, ${b.fileName}"), text)
     }
 
     /** Module `<prefix>-m` with [ONE] and `dir/two.txt`, checked out as alice and mapped to CVS. */

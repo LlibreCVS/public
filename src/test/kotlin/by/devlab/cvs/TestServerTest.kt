@@ -123,8 +123,8 @@ class TestServerTest {
 
             assertFalse(selected(local(commit.minusSeconds(60))), "a minute before the commit, system zone")
             assertTrue(selected(local(commit.plusSeconds(60))), "a minute after the commit, system zone")
-            assertTrue(selected(format.withZone(ZoneOffset.UTC).format(commit.plusSeconds(60)) + " UTC"), "with UTC")
-            assertFalse(selected(format.withZone(ZoneOffset.UTC).format(commit.minusSeconds(60)) + " UTC"), "with UTC")
+            assertTrue(selected(format.withZone(ZoneOffset.UTC).format(commit.plusSeconds(60)) + " UTC"), "a minute after the commit, with UTC")
+            assertFalse(selected(format.withZone(ZoneOffset.UTC).format(commit.minusSeconds(60)) + " UTC"), "a minute before the commit, with UTC")
         }
     }
 

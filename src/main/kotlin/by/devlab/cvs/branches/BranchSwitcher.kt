@@ -10,7 +10,6 @@ import com.intellij.cvsSupport2.cvsoperations.dateOrRevision.RevisionOrDate
 import by.devlab.cvs.update.ChangesetCutoff
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.diagnostic.ControlFlowException
-import com.intellij.openapi.vcs.ProjectLevelVcsManager
 import com.intellij.openapi.vcs.update.FileGroup
 import com.intellij.openapi.vcs.update.UpdatedFiles
 import com.intellij.vcsUtil.VcsUtil
@@ -83,7 +82,7 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         val lists = BranchListService.getInstance(project)
         val merges = MergeService.getInstance(project)
         return roots.map { root ->
-            val name = pathName(root)
+            val name = if (target is SwitchTarget.Date) pathName(root) else rootName(root)
             // A folder (update to a date) is checked by the root that holds it (changeset-update decision 17).
             val owner = if (target is SwitchTarget.Date) workingCopyRoot(root) ?: root else root
             val state = BranchState.read(owner)
@@ -235,16 +234,18 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
      * 10) the root's name and the folder's path below it, e.g. `module/dir`.
      */
     internal fun pathName(path: Path): String {
-        val root = workingCopyRoot(path)
-        if (root == null || root == path) return rootName(path)
-        return "${rootName(root)}/${root.relativize(path).toString().replace('\\', '/')}"
+        val normalized = path.toAbsolutePath().normalize()
+        val root = workingCopyRoot(normalized)
+        if (root == null || root == normalized) return rootName(path)
+        return "${rootName(root)}/${root.relativize(normalized).toString().replace('\\', '/')}"
     }
 
-    /** The CVS working-copy root of the project that holds [path], or null. */
-    internal fun workingCopyRoot(path: Path): Path? {
-        val root = ProjectLevelVcsManager.getInstance(project).getVcsRootFor(VcsUtil.getFilePath(path.toFile(), true))
-        return root?.toNioPath()
-    }
+    /**
+     * The working-copy root of the project that holds [path] (the innermost one), from the roots the branch state
+     * knows: a mapped folder above several checkouts is not a root itself (design decision 17), or null.
+     */
+    internal fun workingCopyRoot(path: Path): Path? =
+        BranchStateService.getInstance(project).rootFor(path.toAbsolutePath().normalize().toString())?.path
 
     companion object {
         /** Why a root that a branch covers only in part was skipped (design decision 20). */

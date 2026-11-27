@@ -10,7 +10,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * Capability changeset-update, requirement "The scope is chosen in a dialog" (design decisions 3, 13): the scope
+ * Capability changeset-update, requirement "The scope is chosen in a dialog" (design decisions 3, 13, 20): the scope
  * dialog's model, without showing the dialog.
  */
 class UpdateToChangesetDialogTest {
@@ -21,7 +21,7 @@ class UpdateToChangesetDialogTest {
     @Test
     @DisplayName("Whole project is the default scope")
     fun wholeProjectIsTheDefaultScope() {
-        val model = UpdateScopeModel(listOf(Files.createDirectories(temp.resolve("a"))))
+        val model = UpdateScopeModel(listOf(workingCopyFolder(temp.resolve("a"))))
 
         assertEquals(UpdateScope.WholeProject, model.scope())
         assertNull(model.validate())
@@ -30,18 +30,22 @@ class UpdateToChangesetDialogTest {
     @Test
     @DisplayName("Folder outside the CVS roots is rejected")
     fun folderOutsideTheCvsRootsIsRejected() {
-        val root = Files.createDirectories(temp.resolve("root"))
-        val inside = Files.createDirectories(root.resolve("dir"))
-        val outside = Files.createDirectories(temp.resolve("rootless"))
+        val root = workingCopyFolder(temp.resolve("root"))
+        val inside = workingCopyFolder(root.resolve("dir"))
+        // A working copy too, but not one of the roots offered (another repository, decision 20).
+        val outside = workingCopyFolder(temp.resolve("other"))
         val model = UpdateScopeModel(listOf(root))
         model.wholeProject = false
 
         model.folder = outside.toString()
-        assertEquals("Choose a folder inside a CVS root of the project", model.validate())
+        assertNotNull(model.validate())
         assertNull(model.scope(), "an invalid choice cannot be confirmed")
 
         model.folder = ""
         assertNotNull(model.validate(), "an empty folder is rejected")
+
+        model.folder = Files.createDirectories(root.resolve("untracked")).toString()
+        assertNotNull(model.validate(), "a folder CVS does not track is rejected")
 
         model.folder = inside.toString()
         assertNull(model.validate())
@@ -49,5 +53,12 @@ class UpdateToChangesetDialogTest {
 
         model.folder = root.toString()
         assertNull(model.validate(), "a root itself is a folder inside the roots")
+    }
+
+    /** [dir] with the `CVS/Entries` a working-copy folder has. */
+    private fun workingCopyFolder(dir: Path): Path {
+        Files.createDirectories(dir.resolve("CVS"))
+        Files.writeString(dir.resolve("CVS").resolve("Entries"), "D\n")
+        return dir
     }
 }
