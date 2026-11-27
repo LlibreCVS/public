@@ -97,6 +97,30 @@ class TestServerTest {
         }
     }
 
+    // changeset-update: the time-zone scenario needs a server that really reads a zone-less date in its own zone.
+    @Test
+    @DisplayName("Server runs in the time zone it was given")
+    fun serverRunsInTheTimeZoneItWasGiven() {
+        TestCvsServer(timeZone = "JST-9").use { server ->
+            server.start()
+            val seed = java.nio.file.Files.createTempDirectory(server.workDirectory, "zone-seed-")
+            seed.resolve("file.txt").toFile().writeText("one\n")
+            server.cvs("import", "-m", "zone", "zone", "vendor", "start", workingDirectory = seed)
+            val log = server.cvs("rlog", "zone/file.txt")
+            val date = Regex("""date: (\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2});""").find(log)!!.groupValues[1]
+            val format = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            val later = java.time.LocalDateTime.parse(date, java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
+                .plusHours(1).format(format)
+
+            // One hour after the commit in UTC wall time; read as JST it is eight hours before the commit.
+            val zoneLess = server.cvs("rlog", "-d", later, "zone/file.txt")
+            val utc = server.cvs("rlog", "-d", "$later UTC", "zone/file.txt")
+
+            assertTrue(zoneLess.contains("selected revisions: 0"), zoneLess)
+            assertTrue(utc.contains("selected revisions: 1"), utc)
+        }
+    }
+
     // Found while proving checkout: with the server's temp directory inside the user profile, commands that create
     // directories there failed with "Permission denied", most often the first one (design decision 19).
     @Test
