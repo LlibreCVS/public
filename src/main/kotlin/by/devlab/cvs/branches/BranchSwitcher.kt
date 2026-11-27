@@ -84,9 +84,11 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         val merges = MergeService.getInstance(project)
         return roots.map { root ->
             val name = pathName(root)
-            val state = BranchState.read(root)
+            // A folder (update to a date) is checked by the root that holds it (changeset-update decision 17).
+            val owner = if (target is SwitchTarget.Date) workingCopyRoot(root) ?: root else root
+            val state = BranchState.read(owner)
             // The merged edits must not travel to another branch (cvs-branch-merge decision 15).
-            val unfinished = merges.unfinished(root)?.let { "unfinished merge of ${it.source}" }
+            val unfinished = merges.unfinished(owner)?.let { "unfinished merge of ${it.source}" }
             val skip = unfinished ?: when (target) {
                 is SwitchTarget.Branch -> when {
                     lists.list(root)?.branches?.contains(target.name) != true -> "lacks the branch ${target.name}"
@@ -95,8 +97,13 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
                 }
                 SwitchTarget.Trunk ->
                     if (state == BranchState.TRUNK && MixedScan.count(root) == 0) "already on the trunk" else null
-                // No branch list or "already on" check: every update to a date is run (changeset-update decision 9).
-                is SwitchTarget.Date -> null
+                // Only the trunk or a date is updated to a date; a root that went to a branch or a tag after the action
+                // was enabled is skipped (changeset-update decisions 4, 6, 12). No branch list or "already on" check.
+                is SwitchTarget.Date -> when (state.kind) {
+                    BranchKind.BRANCH -> "on branch ${state.name}"
+                    BranchKind.TAG -> "on tag ${state.name}"
+                    BranchKind.TRUNK, BranchKind.DATE -> null
+                }
             }
             Step(root, name, skip)
         }
