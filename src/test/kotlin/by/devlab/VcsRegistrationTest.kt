@@ -39,7 +39,7 @@ class VcsRegistrationTest {
 
         assertEquals("librecvs", plugin.pluginId.idString)
         assertEquals("LibreCVS", plugin.name)
-        assertEquals("1.0.6", plugin.version)
+        assertEquals("1.0.7", plugin.version)
         assertEquals("Developer Lab", plugin.vendor)
         assertEquals("https://devlab.by", plugin.url)
         // The descriptor is OpenCVS's: nothing of upstream's identity may survive the build's patching.
@@ -68,6 +68,7 @@ class VcsRegistrationTest {
         )
         assertTrue(description.contains("OpenCVS"), description)
         assertTrue(description.contains("<th>Area</th><th>OpenCVS</th><th>LibreCVS</th>"), description)
+        assertTrue(description.contains("<td>Updating to a committed changeset</td>"), description)
     }
 
     @Test

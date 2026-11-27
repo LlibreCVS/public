@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "by.devlab"
-version = "1.0.6"
+version = "1.0.7"
 
 // OpenCVS (git subtree, see README.md) is compiled by this build, as its own build does: the Java sources, the
 // resource bundles that sit next to them, and its bundled SSH library. Upstream's build script is not used.
@@ -88,6 +88,7 @@ intellijPlatform {
               <tr><td>Branch indicator</td><td>—</td><td>Current branch in the main toolbar and the status bar, mixed working copies marked; the commit window names the branch</td></tr>
               <tr><td>Merging</td><td>Manual merge of a branch</td><td>Merge into Current over the roots with merge-point tags; an unfinished merge is shown and can be completed or forgotten</td></tr>
               <tr><td>Tagging a committed changeset</td><td>—</td><td>Put on Tag for a commit in the repository history (tags its files in the repository, no working copy needed)</td></tr>
+              <tr><td>Updating to a committed changeset</td><td>—</td><td>Update to This Changeset for a commit in the repository history: the whole project or one folder to the trunk as of that commit, time-zone safe; Back to Trunk returns to the latest revisions</td></tr>
               <tr><td>Weekly tag</td><td>—</td><td>Commit and tag with the current week: tag <code>Dwwyyyy</code> (ISO 8601 week and year), moved on every commit of the week</td></tr>
               <tr><td>Local repositories (<code>:local:</code>)</td><td>Runs a <code>cvs</code> executable</td><td>Rejected: no external programs are ever run</td></tr>
               <tr><td>Cyrillic directory names</td><td>One encoding</td><td>Recognized in UTF-8 and in the encoding set in the CVS settings</td></tr>

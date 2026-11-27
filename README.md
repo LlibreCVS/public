@@ -15,7 +15,7 @@ The plugin is published in a custom plugin repository. Add it once; after that t
 2. Click **+**, enter `https://devlab.by/plugins/updatePlugins.xml` and click **OK**.
 3. On the **Marketplace** tab find **LibreCVS**, click **Install** and restart the IDE.
 
-To install without the repository, download [LibreCVS-1.0.6.zip](https://devlab.by/plugins/LibreCVS-1.0.6.zip)
+To install without the repository, download [LibreCVS-1.0.7.zip](https://devlab.by/plugins/LibreCVS-1.0.7.zip)
 and choose **Install Plugin from Disk…** in the same gear menu.
 
 ## User guide
@@ -53,7 +53,7 @@ starts with `upstream-patch:`, and each edited place is marked with an `LibreCVS
 | `upstream-patch: match tracked directory names in the usual CVS encodings` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/common/FindAllRootsHelper.java` | Cyrillic directory names stored in UTF-8 or windows-1251 stay part of their parent's root |
 | `upstream-patch: accept mappings on any CVS working-copy directory` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/common/CvsRootChecker.java` | the IDE does not report a mapping of a tracked subdirectory as invalid |
 | `upstream-patch: reject local CVS repositories instead of running cvs` | `cvs-plugin/src/com/intellij/cvsSupport2/connections/IDEARootFormatter.java`, `cvs-plugin/src/com/intellij/cvsSupport2/config/ui/CvsRootFieldByFieldConfigurationPanel.java` | a local connection would launch a `cvs` executable |
-| `upstream-patch: expose a committed changeset's environment and repository paths` | `cvs-plugin/src/com/intellij/cvsSupport2/changeBrowser/CvsChangeList.java` | Put on Tag tags a changeset's files in the repository (`rtag`) without a working copy |
+| `upstream-patch: expose a committed changeset's environment and repository paths` | `cvs-plugin/src/com/intellij/cvsSupport2/changeBrowser/CvsChangeList.java` | Put on Tag tags a changeset's files in the repository (`rtag`) without a working copy; each file also carries its revision time, the cut-off of Update to This Changeset |
 | `upstream-patch: commit and tag with the current week` | `cvs-plugin/src/com/intellij/cvsSupport2/checkinProject/AdditionalOptionsPanel.java` and `.form`, `cvs-plugin/src/com/intellij/cvsSupport2/checkinProject/CvsCheckinEnvironment.java`, `cvs-plugin/src/com/intellij/cvsSupport2/cvshandlers/CommandCvsHandler.java`, `cvs-plugin/src/com/intellij/cvsSupport2/config/CvsConfiguration.java`, `cvs-core/resources/messages/CvsBundle.properties` | the commit options tag the committed files with the current week's tag `Dwwyyyy` and move it on every commit |
 | `upstream-patch: create the admin reader per command operation` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/common/CvsCommandOperation.java` | the class initializer requested IDE services, which IntelliJ IDEA 2026.x reports as an error on the first CVS operation |
 | `upstream-patch: report a restore of deleted files without false errors` | `cvs-plugin/src/com/intellij/cvsSupport2/cvsoperations/cvsMessages/CvsMessagesTranslator.java`, `cvs-plugin/src/com/intellij/cvsSupport2/checkinProject/CvsRollbackEnvironment.java` | Rollback of deleted files showed a red balloon and logged the server's protocol pieces as warnings although the files were restored |
