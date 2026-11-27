@@ -8,6 +8,7 @@ import by.devlab.cvs.branches.BranchFixtures.refreshed
 import by.devlab.cvs.branches.BranchKind
 import by.devlab.cvs.branches.BranchState
 import by.devlab.cvs.branches.BranchSwitcher
+import by.devlab.cvs.branches.MergeService
 import by.devlab.cvs.branches.SwitchTarget
 import by.devlab.cvs.branches.TestPrompts
 import com.intellij.testFramework.junit5.TestApplication
@@ -173,6 +174,132 @@ class UpdateToChangesetTest {
         assertEquals("one, changeset\n", text(root, ONE))
         assertEquals("", session.stickyTag(root.resolve(ONE)), "no branch tag is left on the file")
     }
+
+    @Test
+    @DisplayName("Declined uncommitted changes confirmation changes nothing")
+    fun declinedUncommittedChangesConfirmationChangesNothing() {
+        val root = root("declined")
+        edit(root, ONE, "one, changeset\n", "the changeset")
+        Thread.sleep(PAUSE)
+        edit(root, TWO, "two, later\n", "a later edit")
+        TestData.edit(root.resolve(ONE), "one, alice's edit\n".toByteArray())
+        prompts.confirmSwitch = false
+        val requestsBefore = session.server.requestLines().size
+
+        val report = switcher().switch(SwitchTarget.Date(cutoff(root, "the changeset")), listOf(root))
+
+        val date = cutoff(root, "the changeset").localText
+        assertEquals(listOf("switch to the trunk as of $date: {${root.fileName}=1}"), prompts.asked)
+        assertEquals(null, report)
+        assertEquals("one, alice's edit\n", text(root, ONE))
+        assertEquals("two, later\n", text(root, TWO))
+        assertEquals(BranchState.TRUNK, BranchState.read(root))
+        assertTrue(session.server.requestLines().drop(requestsBefore).none { it == "Argument -D" }, "no update ran")
+    }
+
+    // Design decision 17: only the changes inside the chosen folder are confirmed.
+    @Test
+    @DisplayName("Changes outside the chosen folder are not confirmed")
+    fun changesOutsideTheChosenFolderAreNotConfirmed() {
+        val root = root("outside")
+        edit(root, TWO, "two, changeset\n", "the changeset")
+        TestData.edit(root.resolve(ONE), "one, alice's edit\n".toByteArray())
+
+        switcher().switch(SwitchTarget.Date(cutoff(root, "the changeset")), listOf(root.resolve("dir")))
+
+        assertEquals(emptyList<String>(), prompts.asked)
+        assertEquals("one, alice's edit\n", text(root, ONE))
+    }
+
+    @Test
+    @DisplayName("Root with an unfinished merge is skipped")
+    fun rootWithAnUnfinishedMergeIsSkipped() {
+        val a = root("merge-a")
+        val b = root("merge-b")
+        recordMerge(a)
+        edit(b, ONE, "one, changeset\n", "the changeset")
+        Thread.sleep(PAUSE)
+        edit(b, ONE, "one, later\n", "a later edit")
+
+        val report = switcher().switch(SwitchTarget.Date(cutoff(b, "the changeset")), listOf(a, b))
+
+        println(report?.text())
+        assertEquals(listOf(a.fileName.toString() to "unfinished merge of BR_FIX"), report!!.skipped)
+        assertEquals(listOf(b.fileName.toString()), report.switched)
+        assertEquals(BranchState.TRUNK, BranchState.read(a))
+        assertEquals("one, changeset\n", text(b, ONE))
+    }
+
+    // Design decision 17: a folder is checked by its root's unfinished merge.
+    @Test
+    @DisplayName("Folder of a root with an unfinished merge is skipped")
+    fun folderOfARootWithAnUnfinishedMergeIsSkipped() {
+        val root = root("merge-folder")
+        edit(root, TWO, "two, changeset\n", "the changeset")
+        Thread.sleep(PAUSE)
+        edit(root, TWO, "two, later\n", "a later edit")
+        recordMerge(root)
+
+        val report = switcher().switch(SwitchTarget.Date(cutoff(root, "the changeset")), listOf(root.resolve("dir")))
+
+        assertEquals(listOf("${root.fileName}/dir" to "unfinished merge of BR_FIX"), report!!.skipped)
+        assertEquals("two, later\n", text(root, TWO))
+    }
+
+    @Test
+    @DisplayName("One notification reports the update")
+    fun oneNotificationReportsTheUpdate() {
+        val a = root("report-a")
+        val b = root("report-b")
+        edit(a, ONE, "one, changeset\n", "the changeset")
+        val cutoff = cutoff(a, "the changeset")
+
+        val (report, notification) = BranchFixtures.notified(project.get()) {
+            switcher().switch(SwitchTarget.Date(cutoff), listOf(a, b))
+        }
+
+        println("${notification.title}\n${notification.content}")
+        assertEquals(listOf(a.fileName.toString(), b.fileName.toString()), report!!.switched)
+        assertEquals("Update to ${cutoff.localText}", notification.title)
+        assertTrue(notification.content.contains("Updated: ${a.fileName}, ${b.fileName}"), notification.content)
+    }
+
+    // Review focus, design decision 12: a root that turned out to be on a tag at run time is skipped, not updated.
+    @Test
+    @DisplayName("Root on a tag at run time is skipped")
+    fun rootOnATagAtRunTimeIsSkipped() {
+        val root = root("tagged")
+        val module = root.fileName.toString()
+        edit(root, ONE, "one, changeset\n", "the changeset")
+        val cutoff = cutoff(root, "the changeset")
+        session.tag(module, "RELEASE_1", "HEAD")
+        session.updateWith(project.get(), root, UpdateOptions(branch = "RELEASE_1"))
+
+        val report = switcher().switch(SwitchTarget.Date(cutoff), listOf(root))
+
+        assertEquals(listOf(module to "on tag RELEASE_1"), report!!.skipped)
+        assertEquals(BranchState(BranchKind.TAG, "RELEASE_1"), BranchState.read(root))
+    }
+
+    @Test
+    @DisplayName("Root on a branch at run time is skipped")
+    fun rootOnABranchAtRunTimeIsSkipped() {
+        val root = root("branched")
+        val module = root.fileName.toString()
+        edit(root, ONE, "one, changeset\n", "the changeset")
+        val cutoff = cutoff(root, "the changeset")
+        session.branch(module, "BR_SIDE")
+        session.updateWith(project.get(), root, UpdateOptions(branch = "BR_SIDE"))
+
+        val report = switcher().switch(SwitchTarget.Date(cutoff), listOf(root))
+
+        assertEquals(listOf(module to "on branch BR_SIDE"), report!!.skipped)
+        assertEquals(BranchState(BranchKind.BRANCH, "BR_SIDE"), BranchState.read(root))
+    }
+
+    private fun recordMerge(root: Path) = MergeService.getInstance(project.get()).record(
+        root, MergeService.UnfinishedMerge("BR_FIX", MergeService.TRUNK, mapOf(ONE to "1.1"), emptyMap()),
+    )
 
     private fun switcher() = BranchSwitcher(project.get(), prompts)
 
