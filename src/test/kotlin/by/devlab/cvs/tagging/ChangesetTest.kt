@@ -2,7 +2,6 @@ package by.devlab.cvs.tagging
 
 import by.devlab.cvs.CvsTestSession
 import by.devlab.cvs.TestData
-import com.intellij.cvsSupport2.changeBrowser.CvsChangeList
 import com.intellij.cvsSupport2.changeBrowser.CvsCommittedChangesProvider
 import com.intellij.cvsSupport2.CvsVcs2
 import com.intellij.testFramework.junit5.TestApplication
@@ -53,11 +52,8 @@ class ChangesetTest {
         assertEquals("alice", changeset.committerName)
         assertEquals(2, changeset.changes.size)
         assertEquals(
-            setOf(
-                CvsChangeList.FileRevision("$module/one.txt", "1.2", false),
-                CvsChangeList.FileRevision("$module/two.txt", "1.2", false),
-            ),
-            changeset.fileRevisions.toSet(),
+            setOf(Triple("$module/one.txt", "1.2", false), Triple("$module/two.txt", "1.2", false)),
+            changeset.fileRevisions.map { Triple(it.path(), it.number(), it.removal()) }.toSet(),
         )
         assertEquals(session.server.cvsRoot("alice"), changeset.environment.cvsRootAsString)
 

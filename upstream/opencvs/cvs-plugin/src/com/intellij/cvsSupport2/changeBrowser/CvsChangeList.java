@@ -179,16 +179,18 @@ public class CvsChangeList implements CommittedChangeList {
     final List<FileRevision> result = new ArrayList<>();
     for (RevisionWrapper wrapper : myRevisions) {
       final Revision revision = wrapper.getRevision();
-      result.add(new FileRevision(wrapper.getFile(), revision.getNumber(), DEAD_STATE.equals(revision.getState())));
+      result.add(new FileRevision(wrapper.getFile(), revision.getNumber(), DEAD_STATE.equals(revision.getState()),
+                                  wrapper.getTime()));
     }
     return result;
   }
 
   /**
    * LibreCVS upstream-patch: one file of a changeset — its path relative to the repository root (no leading
-   * {@code /}, no {@code ,v}, outside the Attic), its revision number, and whether that revision removed the file.
+   * {@code /}, no {@code ,v}, outside the Attic), its revision number, whether that revision removed the file, and
+   * the revision's commit time in milliseconds since the epoch (the changeset's cut-off, update-to-changeset).
    */
-  public record FileRevision(@NotNull String path, @NotNull String number, boolean removal) {
+  public record FileRevision(@NotNull String path, @NotNull String number, boolean removal, long time) {
   }
 
   public boolean containsDate(long date) {
