@@ -7,16 +7,20 @@ import com.intellij.cvsSupport2.cvshandlers.CommandCvsHandler
 import com.intellij.cvsSupport2.cvshandlers.CvsUpdatePolicy
 import com.intellij.cvsSupport2.updateinfo.UpdatedFilesProcessor
 import com.intellij.cvsSupport2.cvsoperations.dateOrRevision.RevisionOrDate
+import by.devlab.cvs.update.ChangesetCutoff
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.diagnostic.ControlFlowException
+import com.intellij.openapi.vcs.ProjectLevelVcsManager
 import com.intellij.openapi.vcs.update.FileGroup
 import com.intellij.openapi.vcs.update.UpdatedFiles
 import com.intellij.vcsUtil.VcsUtil
+import com.intellij.cvsSupport2.history.CvsRevisionNumber
+import org.netbeans.lib.cvsclient.command.Command
 import org.netbeans.lib.cvsclient.command.KeywordSubstitution
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
-/** Where a switch takes the roots: a branch or the trunk. */
+/** Where a switch takes the roots: a branch, the trunk, or the trunk as of a changeset's cut-off. */
 sealed interface SwitchTarget {
     val text: String
 
@@ -26,6 +30,14 @@ sealed interface SwitchTarget {
 
     data object Trunk : SwitchTarget {
         override val text: String get() = "the trunk"
+    }
+
+    /**
+     * The trunk as of [cutoff] (`update -D`, changeset-update design decision 9): the roots or a folder become sticky on
+     * that date.
+     */
+    data class Date(val cutoff: ChangesetCutoff) : SwitchTarget {
+        override val text: String get() = "the trunk as of ${cutoff.localText}"
     }
 }
 
@@ -71,7 +83,7 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         val lists = BranchListService.getInstance(project)
         val merges = MergeService.getInstance(project)
         return roots.map { root ->
-            val name = rootName(root)
+            val name = pathName(root)
             val state = BranchState.read(root)
             // The merged edits must not travel to another branch (cvs-branch-merge decision 15).
             val unfinished = merges.unfinished(root)?.let { "unfinished merge of ${it.source}" }
@@ -83,6 +95,8 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
                 }
                 SwitchTarget.Trunk ->
                     if (state == BranchState.TRUNK && MixedScan.count(root) == 0) "already on the trunk" else null
+                // No branch list or "already on" check: every update to a date is run (changeset-update decision 9).
+                is SwitchTarget.Date -> null
             }
             Step(root, name, skip)
         }
@@ -102,7 +116,7 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         val conflicts = ArrayList<String>()
         val failed = ArrayList<Pair<String, String>>()
         for (step in steps.filter { it.skip == null }) {
-            val result = update(step.root, target)
+            val result = update(step.root, target, step.name)
             if (result.error != null) {
                 failed += step.name to result.error
                 continue
@@ -113,8 +127,11 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         val title = when (target) {
             is SwitchTarget.Branch -> "Switch to ${target.name}"
             SwitchTarget.Trunk -> "Back to trunk"
+            is SwitchTarget.Date -> "Update to ${target.cutoff.localText}"
         }
-        val report = BranchReport(title, switched, steps.mapNotNull { step -> step.skip?.let { step.name to it } }, conflicts, failed)
+        val label = if (target is SwitchTarget.Date) "Updated" else "Switched"
+        val skipped = steps.mapNotNull { step -> step.skip?.let { step.name to it } }
+        val report = BranchReport(title, switched, skipped, conflicts, failed, switchedLabel = label)
         CvsRunner.notify(project, report)
         return report
     }
@@ -123,15 +140,17 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
     internal data class UpdateResult(val error: String?, val conflicts: List<String>)
 
     /**
-     * Updates the working copy [root] to [target] with OpenCVS's update handler (`update -r` or `update -A`, design
-     * decision 14) and reloads it from disk.
+     * Updates the working copy [root] (a root, or a folder of one for a date) to [target] with OpenCVS's update handler
+     * (`update -r`, `update -A` or `update -D`, design decision 14) and reloads it from disk; the conflicts are named
+     * below [name].
      */
-    internal fun update(root: Path, target: SwitchTarget): UpdateResult {
+    internal fun update(root: Path, target: SwitchTarget, name: String = rootName(root)): UpdateResult {
         val readOnly = CvsConfiguration.getInstance(project).MAKE_NEW_FILES_READONLY
         val updated = UpdatedFiles.create()
         val settings = when (target) {
             is SwitchTarget.Branch -> UpdateByBranchUpdateSettings(target.name, readOnly)
             SwitchTarget.Trunk -> TrunkUpdateSettings(readOnly)
+            is SwitchTarget.Date -> DateUpdateSettings(target.cutoff.utcText, readOnly)
         }
         val files = arrayOf(VcsUtil.getFilePath(root.toFile(), true))
         val error = try {
@@ -148,7 +167,7 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         val conflicts = listOf(FileGroup.MERGED_WITH_CONFLICT_ID, CvsUpdatePolicy.BINARY_MERGED_ID)
             .flatMap { updated.getGroupById(it)?.files.orEmpty() }
             .sorted()
-            .map { relative(root, it) }
+            .map { relative(root, name, it) }
         return UpdateResult(error, conflicts)
     }
 
@@ -157,7 +176,7 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
      * operation runs (design decision 21).
      */
     fun start(target: SwitchTarget, roots: List<Path>) {
-        BranchOperations.getInstance(project).queue("Switching to ${target.text}") { switch(target, roots) }
+        BranchOperations.getInstance(project).queue("${if (target is SwitchTarget.Date) "Updating" else "Switching"} to ${target.text}") { switch(target, roots) }
     }
 
     /**
@@ -193,15 +212,31 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         return counts
     }
 
-    /** [file] (a path CVS reported) as `<root name>/<path below the root>`. */
-    private fun relative(root: Path, file: String): String {
-        val path = try {
+    /** [file] (a path CVS reported while updating [path]) as `<name>/<path below [path]>`. */
+    private fun relative(path: Path, name: String, file: String): String {
+        val reported = try {
             Path.of(file)
         } catch (_: InvalidPathException) {
             return file
         }
-        val below = if (path.isAbsolute && path.startsWith(root)) root.relativize(path) else path
-        return "${rootName(root)}/${below.toString().replace('\\', '/')}"
+        val below = if (reported.isAbsolute && reported.startsWith(path)) path.relativize(reported) else reported
+        return "$name/${below.toString().replace('\\', '/')}"
+    }
+
+    /**
+     * The name [path] is reported by: a root's directory name, or for a folder inside a root (changeset-update decision
+     * 10) the root's name and the folder's path below it, e.g. `module/dir`.
+     */
+    internal fun pathName(path: Path): String {
+        val root = workingCopyRoot(path)
+        if (root == null || root == path) return rootName(path)
+        return "${rootName(root)}/${root.relativize(path).toString().replace('\\', '/')}"
+    }
+
+    /** The CVS working-copy root of the project that holds [path], or null. */
+    internal fun workingCopyRoot(path: Path): Path? {
+        val root = ProjectLevelVcsManager.getInstance(project).getVcsRootFor(VcsUtil.getFilePath(path.toFile(), true))
+        return root?.toNioPath()
     }
 
     companion object {
@@ -224,5 +259,33 @@ class BranchSwitcher(private val project: Project, private val prompts: BranchPr
         override fun getRevisionOrDate(): RevisionOrDate = RevisionOrDate.EMPTY
         override fun getKeywordSubstitution(): KeywordSubstitution? = null
         override fun getMakeNewFilesReadOnly(): Boolean = readOnly
+    }
+
+    /**
+     * The update settings of an update to a date (changeset-update decision 9): `update -D <date>` without `-A`, which
+     * replaces the sticky tags with the date; directories pruned and created as for the trunk.
+     */
+    private class DateUpdateSettings(date: String, private val readOnly: Boolean) : UpdateSettings {
+        private val revisionOrDate = UtcDate(date)
+        override fun getPruneEmptyDirectories(): Boolean = true
+        override fun getBranch1ToMergeWith(): String? = null
+        override fun getBranch2ToMergeWith(): String? = null
+        override fun getResetAllSticky(): Boolean = false
+        override fun getDontMakeAnyChanges(): Boolean = false
+        override fun getCreateDirectories(): Boolean = true
+        override fun getCleanCopy(): Boolean = false
+        override fun getRevisionOrDate(): RevisionOrDate = revisionOrDate
+        override fun getKeywordSubstitution(): KeywordSubstitution? = null
+        override fun getMakeNewFilesReadOnly(): Boolean = readOnly
+    }
+
+    /**
+     * A date sent as it is, e.g. `2026-11-27 06:32:10 UTC` (changeset-update decision 8): OpenCVS's own
+     * `RevisionOrDateImpl` drops the zone, and the server would read the date in its local time zone.
+     */
+    private class UtcDate(private val date: String) : RevisionOrDate {
+        override fun setForCommand(command: Command) = command.setUpdateByRevisionOrDate(null, date)
+        override fun getRevision(): String = "HEAD"
+        override fun getCvsRevisionNumber(): CvsRevisionNumber? = null
     }
 }

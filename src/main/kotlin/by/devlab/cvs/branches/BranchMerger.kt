@@ -164,6 +164,7 @@ class BranchMerger(private val project: Project, private val prompts: BranchProm
         fun sourceName(source: SwitchTarget): String = when (source) {
             is SwitchTarget.Branch -> source.name
             SwitchTarget.Trunk -> TRUNK
+            is SwitchTarget.Date -> throw IllegalArgumentException("a date is not a merge source")
         }
     }
 
