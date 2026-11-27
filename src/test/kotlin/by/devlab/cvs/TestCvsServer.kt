@@ -94,12 +94,15 @@ class TestCvsServer : AutoCloseable, BeforeAllCallback, AfterAllCallback {
 
     /**
      * Runs the fixture's `cvs` directly on the repository (no server, no plugin) with [arguments], e.g.
-     * `rlog -h module/file.txt`, to inspect or prepare the repository; returns its output, decoded as UTF-8.
+     * `rlog -h module/file.txt`, to inspect or prepare the repository (in [workingDirectory], e.g. for `import`);
+     * returns its output, decoded as UTF-8. Dates without a zone are read in the Windows system zone: this cvs
+     * ignores `TZ` (changeset-update design decision 19).
      */
-    fun cvs(vararg arguments: String): String {
+    fun cvs(vararg arguments: String, workingDirectory: Path? = null): String {
         val process = ProcessBuilder(listOf(CvsLocator.locate().toString(), "-f", "-d", repositoryPath) + arguments)
             .redirectErrorStream(true)
             .apply { configure(environment(), work.resolve("home")) }
+            .apply { if (workingDirectory != null) directory(workingDirectory.toFile()) }
             .start()
         val output = process.inputStream.readBytes().decodeToString()
         check(process.waitFor(60, TimeUnit.SECONDS) && process.exitValue() == 0) {
