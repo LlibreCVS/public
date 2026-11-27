@@ -2,6 +2,7 @@ package by.devlab.cvs
 
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -15,6 +16,12 @@ import java.io.InputStreamReader
 import java.net.ConnectException
 import java.net.InetAddress
 import java.net.Socket
+import java.nio.file.Files
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 /**
  * Capability cvs-operations, the throwaway server itself (design decisions 7, 8, 11, 16). These tests drive the
@@ -97,27 +104,27 @@ class TestServerTest {
         }
     }
 
-    // changeset-update: the time-zone scenario needs a server that really reads a zone-less date in its own zone.
+    // changeset-update decision 19: the server's cvs ignores TZ and reads a zone-less date in the system zone; the
+    // time-zone scenario relies on that zone being the JVM's system default.
     @Test
-    @DisplayName("Server runs in the time zone it was given")
-    fun serverRunsInTheTimeZoneItWasGiven() {
-        TestCvsServer(timeZone = "JST-9").use { server ->
+    @DisplayName("Server reads a zone-less date in the system time zone")
+    fun serverReadsAZoneLessDateInTheSystemTimeZone() {
+        TestCvsServer().use { server ->
             server.start()
-            val seed = java.nio.file.Files.createTempDirectory(server.workDirectory, "zone-seed-")
+            val seed = Files.createTempDirectory(server.workDirectory, "zone-seed-")
             seed.resolve("file.txt").toFile().writeText("one\n")
             server.cvs("import", "-m", "zone", "zone", "vendor", "start", workingDirectory = seed)
             val log = server.cvs("rlog", "zone/file.txt")
             val date = Regex("""date: (\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2});""").find(log)!!.groupValues[1]
-            val format = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-            val later = java.time.LocalDateTime.parse(date, java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
-                .plusHours(1).format(format)
+            val commit = LocalDateTime.parse(date, DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss")).toInstant(ZoneOffset.UTC)
+            val format = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            fun local(instant: Instant) = format.withZone(ZoneId.systemDefault()).format(instant)
+            fun selected(date: String) = server.cvs("rlog", "-d", date, "zone/file.txt").contains("selected revisions: 0").not()
 
-            // One hour after the commit in UTC wall time; read as JST it is eight hours before the commit.
-            val zoneLess = server.cvs("rlog", "-d", later, "zone/file.txt")
-            val utc = server.cvs("rlog", "-d", "$later UTC", "zone/file.txt")
-
-            assertTrue(zoneLess.contains("selected revisions: 0"), zoneLess)
-            assertTrue(utc.contains("selected revisions: 1"), utc)
+            assertFalse(selected(local(commit.minusSeconds(60))), "a minute before the commit, system zone")
+            assertTrue(selected(local(commit.plusSeconds(60))), "a minute after the commit, system zone")
+            assertTrue(selected(format.withZone(ZoneOffset.UTC).format(commit.plusSeconds(60)) + " UTC"), "with UTC")
+            assertFalse(selected(format.withZone(ZoneOffset.UTC).format(commit.minusSeconds(60)) + " UTC"), "with UTC")
         }
     }
 
