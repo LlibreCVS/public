@@ -22,6 +22,12 @@
       <add-to-group group-id="CommittedChangesToolbar" anchor="last"/>
       <add-to-group group-id="ChangesViewPopupMenu" anchor="last"/>
     </action>
+    <action id="LibreCVS.UpdateToChangeset" class="by.devlab.cvs.update.UpdateToChangesetAction"
+            text="Update to This Changeset..."
+            description="Update the working copy, or one folder, to the trunk as of the selected commit">
+      <add-to-group group-id="CommittedChangesToolbar" anchor="after" relative-to-action="LibreCVS.PutOnTag"/>
+      <add-to-group group-id="ChangesViewPopupMenu" anchor="after" relative-to-action="LibreCVS.PutOnTag"/>
+    </action>
     <action id="LibreCVS.BranchWidget" class="by.devlab.cvs.branches.BranchToolbarAction" text="CVS Branch"
             description="The CVS branch, tag or date of the project's working copies">
       <add-to-group group-id="MainToolbarLeft" anchor="before" relative-to-action="MainToolbarGeneralActionsGroup"/>
